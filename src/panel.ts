@@ -252,7 +252,7 @@ export class CcGuiPanel implements vscode.WebviewViewProvider {
     // Replace the restrictive CSP (designed for JCEF) with one that works in VSCode webview
     html = html.replace(
       /<meta http-equiv="Content-Security-Policy"[^>]*>/,
-      `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' ${webview.cspSource}; style-src 'unsafe-inline' ${webview.cspSource}; img-src ${webview.cspSource} data: https: blob:; font-src ${webview.cspSource} data:; connect-src https: wss: http://localhost:* ws://localhost:*;">`
+      `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' ${webview.cspSource}; style-src 'unsafe-inline' ${webview.cspSource}; img-src ${webview.cspSource} data: https: blob:; font-src ${webview.cspSource} data: blob:; connect-src https: wss: http://localhost:* ws://localhost:*;">`
     );
 
     // Seed language before app JS so i18n can follow VS Code locale on first paint
