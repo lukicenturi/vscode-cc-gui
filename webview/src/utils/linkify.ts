@@ -426,6 +426,7 @@ function shouldSkipTextNode(textNode: Text): boolean {
 }
 
 const FILE_URI_SCHEME_REGEX = /^file:/i;
+const VSCODE_WEBVIEW_SCHEME_REGEX = /^vscode-webview:/i;
 const WINDOWS_DRIVE_PATH_REGEX = /^[A-Za-z]:[\\/]/;
 
 /**
@@ -471,8 +472,32 @@ function fileUriToPath(uri: string): string {
 }
 
 /**
+ * Relative markdown links can surface as `vscode-webview://<id>/<path>` once
+ * resolved against the webview origin. Strip the origin and return the
+ * workspace-relative path (the extension resolves it against the cwd).
+ */
+function webviewUriToRelativePath(uri: string): string {
+  let pathname: string;
+  let hash = '';
+  try {
+    const url = new URL(uri);
+    pathname = url.pathname;
+    hash = url.hash;
+  } catch {
+    const withoutOrigin = uri.replace(/^vscode-webview:(\/\/[^/?#]*)?/i, '');
+    const hashIndex = withoutOrigin.indexOf('#');
+    pathname = (hashIndex >= 0 ? withoutOrigin.slice(0, hashIndex) : withoutOrigin).replace(/\?.*$/, '');
+    hash = hashIndex >= 0 ? withoutOrigin.slice(hashIndex) : '';
+  }
+  const relative = decodeHrefRepeatedly(pathname.replace(/^\/+/, ''));
+  // Preserve GitHub-style line anchors (`#L12`, `#L12-20`) so the line is revealed.
+  return /^#L\d+(?:-L?\d+)?$/i.test(hash) ? `${relative}${hash}` : relative;
+}
+
+/**
  * Normalize markdown/file hrefs into a filesystem path suitable for open_file.
- * Handles percent-encoding, repeated encoding, and file:// URIs.
+ * Handles percent-encoding, repeated encoding, file:// URIs and
+ * vscode-webview:// URIs (relative links resolved against the webview origin).
  */
 export function normalizeFileNavigationTarget(href: string): string | null {
   const trimmed = href.trim();
@@ -484,6 +509,10 @@ export function normalizeFileNavigationTarget(href: string): string | null {
     return fileUriToPath(trimmed);
   }
 
+  if (VSCODE_WEBVIEW_SCHEME_REGEX.test(trimmed)) {
+    return webviewUriToRelativePath(trimmed) || null;
+  }
+
   return decodeHrefRepeatedly(trimmed);
 }
 
@@ -493,7 +522,7 @@ export function isMarkdownFileNavigationHref(href: string): boolean {
     return false;
   }
 
-  if (FILE_URI_SCHEME_REGEX.test(href.trim())) {
+  if (FILE_URI_SCHEME_REGEX.test(href.trim()) || VSCODE_WEBVIEW_SCHEME_REGEX.test(href.trim())) {
     return true;
   }
 

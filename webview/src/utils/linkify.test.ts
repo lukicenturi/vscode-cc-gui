@@ -37,6 +37,21 @@ describe('linkify', () => {
     expect(isMarkdownFileNavigationHref('https://example.com/docs')).toBe(false);
   });
 
+  it('normalizes vscode-webview:// hrefs to workspace-relative paths', () => {
+    expect(
+      normalizeFileNavigationTarget(
+        'vscode-webview://11ofo0elqcb0eu1mhr9lmq1cm1fl643rgll4t68942h3g7hrh28h/CERTIFICATE_BACKEND_PRD.md',
+      ),
+    ).toBe('CERTIFICATE_BACKEND_PRD.md');
+    expect(normalizeFileNavigationTarget('vscode-webview://abc/docs/My%20File.md')).toBe('docs/My File.md');
+    expect(normalizeFileNavigationTarget('VSCODE-WEBVIEW://abc/docs/x.md')).toBe('docs/x.md');
+    expect(normalizeFileNavigationTarget('vscode-webview://abc/docs/x.md#L12')).toBe('docs/x.md#L12');
+    expect(normalizeFileNavigationTarget('vscode-webview://abc/docs/x.md#intro')).toBe('docs/x.md');
+    expect(normalizeFileNavigationTarget('CERTIFICATE_BACKEND_PRD.md')).toBe('CERTIFICATE_BACKEND_PRD.md');
+    expect(isMarkdownFileNavigationHref('vscode-webview://abc/CERTIFICATE_BACKEND_PRD.md')).toBe(true);
+    expect(isMarkdownFileNavigationHref('CERTIFICATE_BACKEND_PRD.md')).toBe(true);
+  });
+
   it('decorates markdown file links with file-link metadata', () => {
     const root = document.createElement('div');
     root.innerHTML = [

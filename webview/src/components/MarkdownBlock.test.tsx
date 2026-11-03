@@ -294,6 +294,44 @@ describe('MarkdownBlock linkify integration', () => {
     expect(bridgeMocks.openBrowser).toHaveBeenCalledWith('https://example.com/docs');
   });
 
+  it('routes bare relative markdown file links to openFile', async () => {
+    render(<MarkdownBlock content={'[CERTIFICATE_BACKEND_PRD.md](CERTIFICATE_BACKEND_PRD.md)'} />);
+
+    const link = screen.getByRole('link', { name: 'CERTIFICATE_BACKEND_PRD.md' });
+    expect(link.getAttribute('href')).toBe('CERTIFICATE_BACKEND_PRD.md');
+    expect(link.getAttribute('data-linkify')).toBe('file');
+
+    fireEvent.click(link);
+    expect(bridgeMocks.openFile).toHaveBeenCalledWith('CERTIFICATE_BACKEND_PRD.md');
+    expect(bridgeMocks.openBrowser).not.toHaveBeenCalled();
+
+    // The real bridge helper turns that href into the open_file event.
+    const actualBridge = await vi.importActual<typeof import('../utils/bridge')>('../utils/bridge');
+    window.sendToJava = vi.fn();
+    actualBridge.openFile(bridgeMocks.openFile.mock.calls[0][0]);
+    expect(window.sendToJava).toHaveBeenCalledWith('open_file:CERTIFICATE_BACKEND_PRD.md');
+  });
+
+  it('keeps vscode-webview:// markdown links and routes them to openFile', async () => {
+    const href =
+      'vscode-webview://11ofo0elqcb0eu1mhr9lmq1cm1fl643rgll4t68942h3g7hrh28h/CERTIFICATE_BACKEND_PRD.md';
+    render(<MarkdownBlock content={`[PRD](${href})`} />);
+
+    const link = screen.getByRole('link', { name: 'PRD' });
+    expect(link.getAttribute('href')).toBe(href);
+    expect(link.getAttribute('data-linkify')).toBe('file');
+    expect(link.classList.contains('file-link')).toBe(true);
+
+    fireEvent.click(link);
+    expect(bridgeMocks.openFile).toHaveBeenCalledWith(href);
+    expect(bridgeMocks.openBrowser).not.toHaveBeenCalled();
+
+    const actualBridge = await vi.importActual<typeof import('../utils/bridge')>('../utils/bridge');
+    window.sendToJava = vi.fn();
+    actualBridge.openFile(bridgeMocks.openFile.mock.calls[0][0]);
+    expect(window.sendToJava).toHaveBeenCalledWith('open_file:CERTIFICATE_BACKEND_PRD.md');
+  });
+
   it('opens markdown posix links with spaces and umlauts', () => {
     render(
       <MarkdownBlock

@@ -46,6 +46,10 @@ import { markedHighlight } from 'marked-highlight';
 
 const SAFE_HREF_PROTOCOL_REGEX = /^(?:https?|mailto):/i;
 const FILE_URI_SCHEME_REGEX = /^file:/i;
+// Relative markdown links may be resolved against the webview origin
+// (`vscode-webview://<id>/path`). Keep them so clicks route to openFile;
+// handleClick always calls preventDefault, so the browser never navigates.
+const VSCODE_WEBVIEW_SCHEME_REGEX = /^vscode-webview:/i;
 const WINDOWS_DRIVE_PATH_REGEX = /^[A-Za-z]:[\\/]/;
 const URI_SCHEME_REGEX = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 let hrefSanitizerHookInstalled = false;
@@ -78,7 +82,7 @@ function isAllowedHrefValue(value: string): boolean {
     return true;
   }
 
-  if (FILE_URI_SCHEME_REGEX.test(trimmed)) {
+  if (FILE_URI_SCHEME_REGEX.test(trimmed) || VSCODE_WEBVIEW_SCHEME_REGEX.test(trimmed)) {
     return true;
   }
 

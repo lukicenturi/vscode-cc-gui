@@ -34,6 +34,16 @@ describe('bridge navigation helpers', () => {
     expect(window.sendToJava).toHaveBeenCalledWith('open_file:../shared/utils.ts');
   });
 
+  it('sends bare relative and vscode-webview:// paths for openFile', () => {
+    openFile('CERTIFICATE_BACKEND_PRD.md');
+    openFile('vscode-webview://11ofo0elqcb0eu1mhr9lmq1cm1fl643rgll4t68942h3g7hrh28h/CERTIFICATE_BACKEND_PRD.md');
+    openFile('vscode-webview://abc/docs/My%20File.md');
+
+    expect(window.sendToJava).toHaveBeenNthCalledWith(1, 'open_file:CERTIFICATE_BACKEND_PRD.md');
+    expect(window.sendToJava).toHaveBeenNthCalledWith(2, 'open_file:CERTIFICATE_BACKEND_PRD.md');
+    expect(window.sendToJava).toHaveBeenNthCalledWith(3, 'open_file:docs/My File.md');
+  });
+
   it('sends openClass for valid Java FQCN values', () => {
     openClass('com.github.claudecodegui.handler.file.OpenFileHandler');
     expect(window.sendToJava).toHaveBeenCalledWith(

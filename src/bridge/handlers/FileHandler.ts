@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { BridgeContext, BridgeHandler, BridgeMessage } from '../types';
+import { parseFileOpenTarget, resolveFileOpenPath } from './fileOpenTarget';
 import { callWindowFunction, parseJson, postJson } from './helpers';
 
 export class FileHandler implements BridgeHandler {
@@ -24,7 +25,7 @@ export class FileHandler implements BridgeHandler {
   async handle({ event, content, webview }: BridgeMessage): Promise<boolean> {
     switch (event) {
       case 'open_file':
-        await this.openFile(content);
+        await this.openFile(content, webview);
         return true;
       case 'open_browser':
         await vscode.env.openExternal(vscode.Uri.parse(content));
@@ -80,18 +81,43 @@ export class FileHandler implements BridgeHandler {
     }
   }
 
-  private async openFile(pathWithLine: string): Promise<void> {
-    const parsed = parseJson<any>(pathWithLine, null);
-    const rawPath = parsed?.filePath ?? parsed?.path ?? pathWithLine;
-    const line = parsed?.line ?? this.extractLine(rawPath);
-    const filePath = String(rawPath).replace(/#L\d+(-\d+)?$/, '').split(':')[0];
-    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
-    const editor = await vscode.window.showTextDocument(doc, { preview: false });
-    if (line) {
-      const pos = new vscode.Position(Math.max(0, Number(line) - 1), 0);
-      editor.selection = new vscode.Selection(pos, pos);
-      editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+  private async openFile(pathWithLine: string, webview: vscode.Webview): Promise<void> {
+    let filePath = '';
+    try {
+      const parsed = parseJson<any>(pathWithLine, null);
+      const rawPath = parsed?.filePath ?? parsed?.path ?? pathWithLine;
+      const target = parseFileOpenTarget(String(rawPath ?? ''));
+      const parsedLine = Number(parsed?.line);
+      const line = Number.isFinite(parsedLine) && parsedLine > 0 ? parsedLine : target.line;
+      if (!target.path) {
+        throw new Error('Empty file path');
+      }
+
+      filePath = resolveFileOpenPath(target.path, this.getFileOpenRoots(), (candidate) => fs.existsSync(candidate));
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+      const editor = await vscode.window.showTextDocument(doc, { preview: false });
+      if (line) {
+        const pos = new vscode.Position(Math.max(0, Number(line) - 1), 0);
+        editor.selection = new vscode.Selection(pos, pos);
+        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.context.log.appendLine(
+        `[FILE] open_file failed raw="${String(pathWithLine)}" resolved="${filePath}": ${reason}`,
+      );
+      this.addToast(webview, `Unable to open file: ${filePath || String(pathWithLine)}`, 'error');
     }
+  }
+
+  /** Roots used to resolve relative `open_file` paths, in priority order. */
+  private getFileOpenRoots(): string[] {
+    const roots: Array<string | undefined> = [
+      this.context.extensionContext.globalState.get<string>('ccg.working_directory'),
+      this.context.getWorkspacePath(),
+      ...(vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath),
+    ];
+    return roots.filter((root): root is string => typeof root === 'string' && root.trim().length > 0);
   }
 
   private async refreshFile(content: string): Promise<void> {
@@ -394,13 +420,6 @@ export class FileHandler implements BridgeHandler {
     if (target?.location?.uri) {
       await vscode.window.showTextDocument(target.location.uri, { selection: target.location.range });
     }
-  }
-
-  private extractLine(filePath: string): number | undefined {
-    const hash = filePath.match(/#L(\d+)/);
-    if (hash) return Number(hash[1]);
-    const colon = filePath.match(/:(\d+)$/);
-    return colon ? Number(colon[1]) : undefined;
   }
 
   private buildIgnoreFilter(root: string): (relPath: string, isDir: boolean) => boolean {
