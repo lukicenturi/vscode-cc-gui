@@ -44,6 +44,11 @@ export function activate(context: vscode.ExtensionContext) {
       await vscode.commands.executeCommand('ccGui.mainView.focus');
     }),
 
+    vscode.commands.registerCommand('ccGui.openHistory', async () => {
+      // Switch the focused chat (sidebar or tab) to its History view.
+      bridge.broadcast('js_eval', 'window.openHistoryView && window.openHistoryView()');
+    }),
+
     vscode.commands.registerCommand('ccGui.newSession', () => {
       panel.openChatTab();
     }),

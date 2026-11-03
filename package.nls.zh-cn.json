@@ -5,6 +5,7 @@
   "ccGui.views.secondaryView.name": "CC GUI",
   "ccGui.command.category": "CC GUI",
   "ccGui.command.openPanel.title": "打开 CC GUI",
+  "ccGui.command.openHistory.title": "打开历史记录",
   "ccGui.command.newSession.title": "新建聊天页签",
   "ccGui.command.renameActiveChatTab.title": "重命名当前聊天页签",
   "ccGui.command.openDevTools.title": "打开 Webview 开发者工具",

@@ -126,6 +126,14 @@ const App = () => {
   useContextActions();
 
   // Apply diff theme on app startup so diff styles work before opening Settings.
+  // Cmd/Ctrl+Shift+H (VS Code keybinding ccGui.openHistory) opens History.
+  useEffect(() => {
+    window.openHistoryView = () => setCurrentView('history');
+    return () => {
+      delete window.openHistoryView;
+    };
+  }, [setCurrentView]);
+
   useEffect(() => {
     const ideTheme = detectIdeThemeFromDom() ?? window.__INITIAL_IDE_THEME__ ?? null;
     applyDiffTheme(getStoredDiffTheme(), ideTheme);

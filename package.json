@@ -93,6 +93,12 @@
         }
       },
       {
+        "command": "ccGui.openHistory",
+        "title": "%ccGui.command.openHistory.title%",
+        "category": "%ccGui.command.category%",
+        "icon": "$(history)"
+      },
+      {
         "command": "ccGui.newSession",
         "title": "%ccGui.command.newSession.title%",
         "category": "%ccGui.command.category%",
@@ -230,6 +236,12 @@
       ]
     },
     "keybindings": [
+      {
+        "command": "ccGui.openHistory",
+        "key": "ctrl+shift+h",
+        "mac": "cmd+shift+h",
+        "when": "focusedView == ccGui.mainView || focusedView == ccGui.secondaryView || activeWebviewPanelId == ccGui.chatTab"
+      },
       {
         "command": "ccGui.sendSelection",
         "key": "ctrl+alt+k",

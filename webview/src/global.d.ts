@@ -786,6 +786,8 @@ interface Window {
    * backend snapshot's per-block routing remains consistent.
    */
   onBlockReset?: () => void;
+  /** Switch the chat to the History view (VS Code command ccGui.openHistory). */
+  openHistoryView?: () => void;
 
   /**
    * Stream rollback callback - fired when the API stream failed and Claude

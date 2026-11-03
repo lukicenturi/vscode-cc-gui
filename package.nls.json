@@ -5,6 +5,7 @@
   "ccGui.views.secondaryView.name": "CC GUI",
   "ccGui.command.category": "CC GUI",
   "ccGui.command.openPanel.title": "Open CC GUI",
+  "ccGui.command.openHistory.title": "Open History",
   "ccGui.command.newSession.title": "New Chat Tab",
   "ccGui.command.renameActiveChatTab.title": "Rename Active Chat Tab",
   "ccGui.command.openDevTools.title": "Open Webview Developer Tools",
