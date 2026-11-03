@@ -1,3 +1,4 @@
+import { stripStrayInlineStyles } from './utils/strayInlineStyles';
 import {
   forwardRef,
   memo,
@@ -317,6 +318,10 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
         // This prevents: 1) double handleInput calls, 2) debouncedOnInput timer
         // reset that delays parent notification by an extra 100ms.
         cancelPendingFallback();
+
+        // Drop the browser "typing style" that follows a deletion of styled
+        // text (inline code, fences): see stripStrayInlineStyles.
+        if (editableRef.current) stripStrayInlineStyles(editableRef.current);
 
         // Invalidate cache since content changed
         invalidateCache();
