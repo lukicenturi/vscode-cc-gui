@@ -14,6 +14,20 @@
 
 Run **CC GUI: Start Remote Control (Phone)** from the Command Palette, or click the phone icon in the CC GUI view title bar. Select a folder, then enter a session name. The extension starts `claude remote-control --name <name>` in a new VS Code terminal in that folder. Open the Claude app on your phone, go to **Code**, and select the session to chat with that folder. On macOS, the command runs inside `caffeinate -i` so that the Mac does not sleep (setting `ccGui.remoteControl.keepAwake`). The session is stored by the Claude Code CLI, so it also shows in the CC GUI History view of that workspace.
 
+### Drag files from the Explorer into the chat
+
+Drag a file from the VS Code Explorer into the chat input. The extension inserts an `@path` reference, so the model can read the file. VS Code blocks pointer events on every webview while a drag runs inside the window, so the drop only reaches the chat when you **hold Shift**. This is a VS Code rule, not an extension rule.
+
+To drop without Shift, patch the installed VS Code with:
+
+```bash
+scripts/patch-vscode-webview-drop.sh apply     # back up, patch, and fix the checksum
+scripts/patch-vscode-webview-drop.sh restore   # put the original file back
+scripts/patch-vscode-webview-drop.sh status    # show if the patch is applied
+```
+
+The script inverts the rule: the webview gets the drop by default, and Shift gives the old VS Code behaviour. Restart VS Code after the patch. Run `apply` again after each VS Code update, because an update replaces the file. Set `VSCODE_APP` to patch a different install.
+
 ---
 
 ## Keep the fork up to date with upstream
