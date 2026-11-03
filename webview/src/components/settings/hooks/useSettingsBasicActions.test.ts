@@ -140,10 +140,15 @@ describe('useSettingsBasicActions', () => {
       result.current.handleUiFontSelectionChange('preset:claudeSerif');
     });
 
-    expect(window.sendToJava).toHaveBeenCalledTimes(1);
-    expect(window.sendToJava).toHaveBeenCalledWith(
-      `set_ui_font_config:${JSON.stringify({ mode: 'customFile', customFontPath: presetPath })}`
-    );
+    // The preset id always goes to the host, which resolves the file itself.
+    // A known preset also carries its path; an unknown one sends an empty path.
+    const setCalls = (window.sendToJava as ReturnType<typeof vi.fn>).mock.calls
+      .map((call) => String(call[0]))
+      .filter((message) => message.startsWith('set_ui_font_config:'));
+    expect(setCalls).toEqual([
+      `set_ui_font_config:${JSON.stringify({ mode: 'customFile', presetId: 'claudeSans', customFontPath: presetPath })}`,
+      `set_ui_font_config:${JSON.stringify({ mode: 'customFile', presetId: 'claudeSerif', customFontPath: '' })}`,
+    ]);
   });
 });
 

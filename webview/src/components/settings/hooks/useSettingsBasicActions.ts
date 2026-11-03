@@ -385,12 +385,14 @@ export function useSettingsBasicActions({
     if (selection.startsWith(UI_FONT_PRESET_PREFIX)) {
       const presetId = selection.slice(UI_FONT_PRESET_PREFIX.length);
       const preset = uiFontConfig?.presets?.find((item) => item.id === presetId);
-      if (preset) {
-        sendToJava(`set_ui_font_config:${JSON.stringify({
-          mode: 'customFile',
-          customFontPath: preset.path,
-        })}`);
-      }
+      // Always send the preset id: the host resolves the file path itself, so
+      // the selection works even when the webview state has no presets yet.
+      sendToJava(`debug_log:[FONT] ui font selection=${selection} presetsInState=${uiFontConfig?.presets?.length ?? 0}`);
+      sendToJava(`set_ui_font_config:${JSON.stringify({
+        mode: 'customFile',
+        presetId,
+        customFontPath: preset?.path ?? '',
+      })}`);
       return;
     }
 

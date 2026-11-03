@@ -590,7 +590,16 @@ export class SettingsStore {
   private async setFontConfig(key: string, content: string): Promise<void> {
     const parsed = this.parseJson<Partial<FontConfig>>(content, {});
     const mode: FontMode = parsed.mode === 'customFile' ? 'customFile' : 'followEditor';
-    const customFontPath = typeof parsed.customFontPath === 'string' ? parsed.customFontPath.trim() : '';
+    let customFontPath = typeof parsed.customFontPath === 'string' ? parsed.customFontPath.trim() : '';
+    // A Claude app preset: resolve the font file here, so the webview does not
+    // need the preset list in its state.
+    const presetId = typeof (parsed as { presetId?: unknown }).presetId === 'string'
+      ? (parsed as { presetId: string }).presetId
+      : '';
+    if (presetId) {
+      const preset = this.getClaudeAppFontPresets().find((item) => item.id === presetId);
+      if (preset) customFontPath = preset.path;
+    }
     await this.state.update(key, mode === 'customFile'
       ? { mode, customFontPath }
       : { mode: 'followEditor' });
