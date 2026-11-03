@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as cp from 'child_process';
 import { NodeDetector } from './nodeDetector';
 import { MessageDispatcher } from './bridge/MessageDispatcher';
+import { callWindowFunction } from './bridge/handlers/helpers';
 import { BridgeContext } from './bridge/types';
 import { ProviderHandler } from './bridge/handlers/ProviderHandler';
 import { SettingsHandler } from './bridge/handlers/SettingsHandler';
@@ -679,7 +680,28 @@ export class BridgeServer {
     this._permissionIpc.replayPendingDialogs(webview);
     this._refreshSlashCommands(webview);
     webview.postMessage({ type: 'mode_received', content: this._state('permission_mode', 'default') });
+    this._pushFontConfigs(webview);
     setTimeout(() => this._pushActiveFile(vscode.window.activeTextEditor), 100);
+  }
+
+  /**
+   * Apply the saved UI and code fonts as soon as the page is ready. Without
+   * this push the fonts load only when the Settings page requests them, so a
+   * custom font (for example the Claude app preset) is lost on every reload.
+   */
+  private _pushFontConfigs(webview: vscode.Webview): void {
+    try {
+      const ui = this._settingsStore.getUiFontConfig();
+      const code = this._settingsStore.getCodeFontConfig();
+      this._log.appendLine(
+        `[FONT] push ui mode=${ui.mode} effective=${ui.effectiveMode} family=${ui.fontFamily}`
+        + ` path=${ui.customFontPath ?? ''} data=${ui.fontBase64 ? 'yes' : 'no'}`,
+      );
+      callWindowFunction(webview, 'applyUiFontConfig', ui);
+      callWindowFunction(webview, 'applyCodeFontConfig', code);
+    } catch (error) {
+      this._log.appendLine(`[FONT] push failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private _handleCreateNewSession(webview: vscode.Webview): void {
