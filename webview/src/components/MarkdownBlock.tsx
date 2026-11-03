@@ -21,25 +21,7 @@ import {
   subscribeLinkifyCapabilities,
   type LinkifyCapabilities,
 } from '../utils/linkifyCapabilities';
-import hljs from 'highlight.js/lib/core';
-import bash from 'highlight.js/lib/languages/bash';
-import css from 'highlight.js/lib/languages/css';
-import diff from 'highlight.js/lib/languages/diff';
-import dockerfile from 'highlight.js/lib/languages/dockerfile';
-import go from 'highlight.js/lib/languages/go';
-import java from 'highlight.js/lib/languages/java';
-import javascript from 'highlight.js/lib/languages/javascript';
-import json from 'highlight.js/lib/languages/json';
-import kotlin from 'highlight.js/lib/languages/kotlin';
-import markdown from 'highlight.js/lib/languages/markdown';
-import plaintext from 'highlight.js/lib/languages/plaintext';
-import python from 'highlight.js/lib/languages/python';
-import rust from 'highlight.js/lib/languages/rust';
-import shell from 'highlight.js/lib/languages/shell';
-import sql from 'highlight.js/lib/languages/sql';
-import typescript from 'highlight.js/lib/languages/typescript';
-import xml from 'highlight.js/lib/languages/xml';
-import yaml from 'highlight.js/lib/languages/yaml';
+import { COPY_ICON_SVG, highlightCode } from '../utils/highlightCode';
 import 'highlight.js/styles/github-dark.css';
 import 'katex/dist/katex.css';
 import { markedHighlight } from 'marked-highlight';
@@ -120,37 +102,6 @@ const MARKDOWN_LINK_SANITIZE_OPTIONS = {
   ALLOW_UNKNOWN_PROTOCOLS: true,
 } as const;
 
-const highlightLanguages: Array<[string, Parameters<typeof hljs.registerLanguage>[1]]> = [
-  ['bash', bash],
-  ['css', css],
-  ['diff', diff],
-  ['dockerfile', dockerfile],
-  ['go', go],
-  ['java', java],
-  ['javascript', javascript],
-  ['json', json],
-  ['kotlin', kotlin],
-  ['markdown', markdown],
-  ['plaintext', plaintext],
-  ['python', python],
-  ['rust', rust],
-  ['shell', shell],
-  ['sql', sql],
-  ['typescript', typescript],
-  ['xml', xml],
-  ['yaml', yaml],
-];
-
-highlightLanguages.forEach(([name, language]) => {
-  hljs.registerLanguage(name, language);
-});
-
-hljs.registerAliases(['js', 'jsx'], { languageName: 'javascript' });
-hljs.registerAliases(['ts', 'tsx'], { languageName: 'typescript' });
-hljs.registerAliases(['sh', 'zsh'], { languageName: 'bash' });
-hljs.registerAliases(['html', 'xhtml', 'svg'], { languageName: 'xml' });
-hljs.registerAliases(['yml'], { languageName: 'yaml' });
-
 // Lazy-loaded mermaid singleton (deferred until first diagram is encountered)
 let mermaidInstance: typeof import('mermaid').default | null = null;
 async function getMermaid() {
@@ -178,16 +129,7 @@ marked.use(
       if (lang === 'mermaid') {
         return code;
       }
-      if (lang && hljs.getLanguage(lang)) {
-        try {
-          return hljs.highlight(code, { language: lang }).value;
-        } catch {
-          // Silently fall through to plain-text rendering
-        }
-      }
-      // highlightAuto misclassifies prose like commit messages (leading "- " lines
-      // score as diff deletions), so unlabeled blocks render as plain text
-      return hljs.highlight(code, { language: 'plaintext' }).value;
+      return highlightCode(code, lang);
     },
   })
 );
@@ -843,14 +785,6 @@ function renderStreamingContent(
 // Mermaid render counter for generating unique IDs
 let mermaidIdCounter = 0;
 
-// Copy icon SVG (hoisted to module scope to avoid recreation on each render)
-const copyIconSvg = `
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M4 4l0 8a2 2 0 0 0 2 2l8 0a2 2 0 0 0 2 -2l0 -8a2 2 0 0 0 -2 -2l-8 0a2 2 0 0 0 -2 2zm2 0l8 0l0 8l-8 0l0 -8z" fill="currentColor" fill-opacity="0.9"/>
-      <path d="M2 2l0 8l-2 0l0 -8a2 2 0 0 1 2 -2l8 0l0 2l-8 0z" fill="currentColor" fill-opacity="0.6"/>
-    </svg>
-  `;
-
 const MarkdownBlock = ({ content = '', isStreaming = false }: MarkdownBlockProps) => {
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [linkifyCapabilities, setLinkifyCapabilities] = useState<LinkifyCapabilities>(() =>
@@ -1098,7 +1032,7 @@ const MarkdownBlock = ({ content = '', isStreaming = false }: MarkdownBlockProps
 
         const iconSpan = doc.createElement('span');
         iconSpan.className = 'copy-icon';
-        iconSpan.innerHTML = copyIconSvg;
+        iconSpan.innerHTML = COPY_ICON_SVG;
 
         const tooltipSpan = doc.createElement('span');
         tooltipSpan.className = 'copy-tooltip';

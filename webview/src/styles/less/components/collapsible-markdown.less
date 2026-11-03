@@ -11,6 +11,15 @@
     .plain-text-content {
         white-space: pre-wrap;
         word-break: break-word;
+
+        /* The container also has the markdown-content class, thus the code
+           block and inline code rules apply. Keep the text size, line height
+           and cursor of the bubble. */
+        &.markdown-content {
+            font-size: inherit;
+            line-height: inherit;
+            cursor: inherit;
+        }
     }
 
     .collapse-overlay {

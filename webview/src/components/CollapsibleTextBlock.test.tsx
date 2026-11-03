@@ -1,5 +1,29 @@
-import { describe, expect, it } from 'vitest';
-import { convertAtFileRefsToLinks } from './CollapsibleTextBlock';
+import { act, fireEvent, render } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import CollapsibleTextBlock, {
+  convertAtFileRefsToLinks,
+  segmentUserText,
+} from './CollapsibleTextBlock';
+
+const { copyToClipboardMock, openFileMock } = vi.hoisted(() => ({
+  copyToClipboardMock: vi.fn(async (_text: string) => true),
+  openFileMock: vi.fn(),
+}));
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) =>
+      ({ 'markdown.copyCode': 'Copy code', 'markdown.copySuccess': 'Copied!' })[key] ?? key,
+  }),
+}));
+
+vi.mock('../utils/copyUtils', () => ({
+  copyToClipboard: copyToClipboardMock,
+}));
+
+vi.mock('../utils/bridge', () => ({
+  openFile: openFileMock,
+}));
 
 describe('convertAtFileRefsToLinks', () => {
   // ── 基本路径匹配 ──────────────────────────────────
@@ -211,5 +235,155 @@ describe('convertAtFileRefsToLinks', () => {
     const result = convertAtFileRefsToLinks('你好@');
     // 独立的 @ 不参与任何匹配
     expect(result).toBe('你好@');
+  });
+});
+
+describe('segmentUserText', () => {
+  it('returns plain text as one segment', () => {
+    expect(segmentUserText('hello\nworld')).toEqual([{ type: 'text', text: 'hello\nworld' }]);
+  });
+
+  it('splits a fenced block with a language and removes the fence lines', () => {
+    expect(segmentUserText('before\n```ts\nconst a = 1;\n```\nafter')).toEqual([
+      { type: 'text', text: 'before' },
+      { type: 'fence', code: 'const a = 1;', lang: 'ts' },
+      { type: 'text', text: 'after' },
+    ]);
+  });
+
+  it('supports ~~~ fences and a longer closing line', () => {
+    expect(segmentUserText('~~~\na\n```\n~~~~')).toEqual([
+      { type: 'fence', code: 'a\n```', lang: '' },
+    ]);
+  });
+
+  it('continues an unclosed fence to the end of the text', () => {
+    expect(segmentUserText('x\n```py\nprint(1)\nprint(2)')).toEqual([
+      { type: 'text', text: 'x' },
+      { type: 'fence', code: 'print(1)\nprint(2)', lang: 'py' },
+    ]);
+  });
+
+  it('does not treat ```a``` on one line as a fence', () => {
+    expect(segmentUserText('```a```')).toEqual([{ type: 'text', text: '```a```' }]);
+  });
+
+  it('splits inline code', () => {
+    expect(segmentUserText('run `npm test` now')).toEqual([
+      { type: 'text', text: 'run ' },
+      { type: 'inline-code', text: 'npm test' },
+      { type: 'text', text: ' now' },
+    ]);
+  });
+
+  it('does not let inline code span lines', () => {
+    expect(segmentUserText('a `b\nc` d')).toEqual([{ type: 'text', text: 'a `b\nc` d' }]);
+  });
+});
+
+describe('CollapsibleTextBlock rendering', () => {
+  beforeEach(() => {
+    copyToClipboardMock.mockClear();
+    openFileMock.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const renderBlock = (content: string) => {
+    const { container } = render(<CollapsibleTextBlock content={content} />);
+    return container.querySelector('.plain-text-content') as HTMLElement;
+  };
+
+  it('renders a fenced block with a language as pre code.language-ts', () => {
+    const root = renderBlock('look:\n```ts\nconst a: number = 1;\n```\ndone');
+    const code = root.querySelector('.code-block-wrapper pre code.language-ts');
+    expect(code).not.toBeNull();
+    expect(code?.textContent).toBe('const a: number = 1;');
+    // highlight.js spans survive the sanitizer
+    expect(code?.querySelector('span[class^="hljs-"]')).not.toBeNull();
+    expect(root.textContent).not.toContain('```');
+    expect(root.querySelector('button.copy-code-btn svg path')).not.toBeNull();
+    expect(root.querySelector('button.copy-code-btn')?.getAttribute('aria-label')).toBe('Copy code');
+  });
+
+  it('uses the markdown-content class so the code CSS applies', () => {
+    const root = renderBlock('text');
+    expect(root.classList.contains('markdown-content')).toBe(true);
+  });
+
+  it('renders inline code as <code> without the backticks', () => {
+    const root = renderBlock('run `npm test` now');
+    const code = root.querySelector('code');
+    expect(code?.textContent).toBe('npm test');
+    expect(code?.closest('pre')).toBeNull();
+    expect(root.textContent).toBe('run npm test now');
+  });
+
+  it('escapes HTML in inline code and code blocks', () => {
+    const root = renderBlock('`<b>x</b>`\n```\n<script>alert(1)</script>\n```');
+    expect(root.querySelector('b')).toBeNull();
+    expect(root.querySelector('script')).toBeNull();
+    expect(root.querySelector('code')?.textContent).toBe('<b>x</b>');
+    expect(root.querySelector('pre code')?.textContent).toBe('<script>alert(1)</script>');
+  });
+
+  it('converts @path links in plain text but not inside code', () => {
+    const root = renderBlock('see @src/app.ts and `@src/b.ts`\n```\n@src/c.ts\n```');
+    const links = root.querySelectorAll('a[data-linkify="file"]');
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute('href')).toBe('src/app.ts');
+    expect(root.querySelector('code')?.textContent).toBe('@src/b.ts');
+    expect(root.querySelector('pre code')?.textContent).toBe('@src/c.ts');
+  });
+
+  it('keeps a lone backtick literal', () => {
+    const root = renderBlock('it`s fine');
+    expect(root.querySelector('code')).toBeNull();
+    expect(root.textContent).toBe('it`s fine');
+  });
+
+  it('keeps triple backticks inside a line literal', () => {
+    const root = renderBlock('use ```code``` here');
+    expect(root.querySelector('code')).toBeNull();
+    expect(root.querySelector('pre')).toBeNull();
+    expect(root.textContent).toBe('use ```code``` here');
+  });
+
+  it('copies the code text when the copy button is clicked', async () => {
+    vi.useFakeTimers();
+    const root = renderBlock('```js\nconsole.log("hi");\nreturn 1;\n```');
+    const button = root.querySelector('button.copy-code-btn') as HTMLButtonElement;
+
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    expect(copyToClipboardMock).toHaveBeenCalledWith('console.log("hi");\nreturn 1;');
+    expect(button.classList.contains('copied')).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(button.classList.contains('copied')).toBe(false);
+  });
+
+  it('copies when the click lands on the icon inside the button', async () => {
+    const root = renderBlock('```\nabc\n```');
+    const path = root.querySelector('button.copy-code-btn path') as Element;
+
+    await act(async () => {
+      fireEvent.click(path);
+    });
+
+    expect(copyToClipboardMock).toHaveBeenCalledWith('abc');
+  });
+
+  it('still opens file links on click', () => {
+    const root = renderBlock('open @src/app.ts#L3');
+    const link = root.querySelector('a[data-linkify="file"]') as HTMLAnchorElement;
+    fireEvent.click(link);
+    expect(openFileMock).toHaveBeenCalledWith('src/app.ts:3');
   });
 });

@@ -1,7 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import DOMPurify from 'dompurify';
+import { useTranslation } from 'react-i18next';
 import { openFile } from '../utils/bridge';
+import { copyToClipboard } from '../utils/copyUtils';
+import { COPY_ICON_SVG, highlightCode } from '../utils/highlightCode';
 import { looksLikePathSegment } from '../utils/pathSegment';
+import { findInlineCodeRanges } from './ChatInputBox/utils/codeFenceDecoration';
 
 interface CollapsibleTextBlockProps {
   content: string;
@@ -169,6 +173,167 @@ export function convertAtFileRefsToLinks(text: string): string {
   return result;
 }
 
+/** A part of the user text, as segmentUserText gives it. */
+export type UserTextSegment =
+  | { type: 'text'; text: string }
+  | { type: 'inline-code'; text: string }
+  | { type: 'fence'; code: string; lang: string };
+
+/** An opening fence line: up to 3 spaces, 3 or more ` or ~, an info string. */
+const OPEN_FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+/** A closing fence line: up to 3 spaces, 3 or more ` or ~, only spaces after. */
+const CLOSE_FENCE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
+/** The language names that the code element can show in its class. */
+const SAFE_LANG_RE = /^[\w#+.-]+$/;
+
+/** The opening fence of a line, or null when the line is not an opening fence. */
+function matchOpenFence(line: string): { marker: string; lang: string } | null {
+  const match = OPEN_FENCE_RE.exec(line.replace(/\r$/, ''));
+  if (!match) return null;
+  const marker = match[1];
+  const info = match[2];
+  // The info string of a ``` fence cannot have a backtick (CommonMark):
+  // ```a``` on one line is not a fence.
+  if (marker[0] === '`' && info.includes('`')) return null;
+  const lang = info.trim().split(/\s+/)[0] ?? '';
+  return { marker, lang: SAFE_LANG_RE.test(lang) ? lang : '' };
+}
+
+/** True when the line closes a fence that opened with the marker. */
+function isCloseFence(line: string, openMarker: string): boolean {
+  const match = CLOSE_FENCE_RE.exec(line.replace(/\r$/, ''));
+  return (
+    match !== null &&
+    match[1][0] === openMarker[0] &&
+    match[1].length >= openMarker.length
+  );
+}
+
+/** Split plain lines into text and inline code segments. */
+function pushInlineSegments(lines: string[], segments: UserTextSegment[]): void {
+  let text = '';
+  lines.forEach((line, index) => {
+    if (index > 0) text += '\n';
+    let pos = 0;
+    for (const range of findInlineCodeRanges(line)) {
+      text += line.slice(pos, range.start);
+      if (text) segments.push({ type: 'text', text });
+      text = '';
+      segments.push({ type: 'inline-code', text: line.slice(range.start + 1, range.end) });
+      pos = range.end + 1;
+    }
+    text += line.slice(pos);
+  });
+  if (text) segments.push({ type: 'text', text });
+}
+
+/**
+ * Split user text into fenced code blocks, inline code and plain text.
+ *
+ * - A fence starts at a line with 3 or more ` or ~ (and an optional
+ *   language). It stops at a closing line with the same character and at
+ *   least the same count, or at the end of the text. The fence lines are not
+ *   in the segment, and the line breaks next to a fence are removed because
+ *   the code block is a block element.
+ * - Inline code follows the rules of the chat input: one backtick on each
+ *   side, at least one character between, in one line. A run of 2 or more
+ *   backticks is plain text.
+ *
+ * @visibleForTesting
+ */
+export function segmentUserText(text: string): UserTextSegment[] {
+  const segments: UserTextSegment[] = [];
+  if (!text) return segments;
+
+  const lines = text.split('\n');
+  let plain: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const open = matchOpenFence(lines[i]);
+    if (!open) {
+      plain.push(lines[i]);
+      i++;
+      continue;
+    }
+
+    pushInlineSegments(plain, segments);
+    plain = [];
+
+    let end = i + 1;
+    while (end < lines.length && !isCloseFence(lines[end], open.marker)) end++;
+    const code = lines
+      .slice(i + 1, end)
+      .map((line) => line.replace(/\r$/, ''))
+      .join('\n');
+    segments.push({ type: 'fence', code, lang: open.lang });
+    i = end + 1; // skip the closing line (or go past the end)
+  }
+
+  pushInlineSegments(plain, segments);
+  return segments;
+}
+
+interface CodeBlockLabels {
+  copyCode: string;
+  copySuccess: string;
+}
+
+/**
+ * Build the HTML of user text. Code blocks get the same structure as the
+ * code blocks of MarkdownBlock, thus the same CSS and copy button apply.
+ *
+ * @visibleForTesting
+ */
+export function renderUserTextHtml(text: string, labels: CodeBlockLabels): string {
+  const copyCode = escapeHtml(labels.copyCode);
+  const copySuccess = escapeHtml(labels.copySuccess);
+
+  return segmentUserText(text)
+    .map((segment) => {
+      switch (segment.type) {
+        case 'text':
+          return convertAtFileRefsToLinks(segment.text);
+        case 'inline-code':
+          return `<code>${escapeHtml(segment.text)}</code>`;
+        case 'fence': {
+          const classAttr = segment.lang ? ` class="language-${escapeHtml(segment.lang)}"` : '';
+          return (
+            '<div class="code-block-wrapper">' +
+            `<pre><code${classAttr}>${highlightCode(segment.code, segment.lang)}</code></pre>` +
+            `<button type="button" class="copy-code-btn" title="${copyCode}" aria-label="${copyCode}">` +
+            `<span class="copy-icon">${COPY_ICON_SVG.trim()}</span>` +
+            `<span class="copy-tooltip">${copySuccess}</span>` +
+            '</button>' +
+            '</div>'
+          );
+        }
+      }
+    })
+    .join('');
+}
+
+const SANITIZE_OPTIONS = {
+  ALLOWED_TAGS: ['a', 'div', 'pre', 'code', 'span', 'button', 'svg', 'path'],
+  ALLOWED_ATTR: [
+    'class',
+    'href',
+    'data-linkify',
+    'data-lang',
+    'title',
+    'aria-label',
+    'type',
+    // Copy icon
+    'width',
+    'height',
+    'viewBox',
+    'fill',
+    'fill-opacity',
+    'd',
+    'xmlns',
+  ],
+};
+
 const MAX_HEIGHT = 160; // Approx 7-8 lines
 
 // Very large pasted texts (hundreds of KB) must not be fully materialized in the
@@ -182,6 +347,9 @@ const CollapsibleTextBlock: React.FC<CollapsibleTextBlockProps> = ({ content }) 
   const [expanded, setExpanded] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
+  const copyCode = t('markdown.copyCode');
+  const copySuccess = t('markdown.copySuccess');
 
   const isLargeContent = content.length > LARGE_CONTENT_THRESHOLD;
   const displayContent = !expanded && isLargeContent
@@ -190,19 +358,21 @@ const CollapsibleTextBlock: React.FC<CollapsibleTextBlockProps> = ({ content }) 
   // Large content always overflows the collapsed height — force the affordance on
   const showOverflow = isOverflowing || isLargeContent;
 
-  // Convert @path references to clickable links at display time.
+  // Render code fences and inline code, and convert @path references in the
+  // plain text to clickable links. A fence that the large-content slice cuts
+  // continues to the end of the slice.
   // Sanitize the resulting HTML through DOMPurify as a defense-in-depth measure
-  // (all content is already escaped by convertAtFileRefsToLinks, but
+  // (all text is already escaped by renderUserTextHtml, but
   // dangerouslySetInnerHTML warrants a final sanitization pass).
   // Memoized: user messages re-render with every parent update, but the
-  // conversion only depends on displayContent.
+  // conversion only depends on displayContent and the labels.
   const htmlContent = useMemo(
     () =>
-      DOMPurify.sanitize(convertAtFileRefsToLinks(displayContent), {
-        ALLOWED_TAGS: ['a'],
-        ALLOWED_ATTR: ['class', 'href', 'data-linkify', 'title'],
-      }),
-    [displayContent],
+      DOMPurify.sanitize(
+        renderUserTextHtml(displayContent, { copyCode, copySuccess }),
+        SANITIZE_OPTIONS,
+      ),
+    [displayContent, copyCode, copySuccess],
   );
 
   useEffect(() => {
@@ -229,9 +399,30 @@ const CollapsibleTextBlock: React.FC<CollapsibleTextBlockProps> = ({ content }) 
     setExpanded(!expanded);
   };
 
-  // Delegate click to openFile for file-link anchors
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
+  // Delegate clicks: copy buttons of code blocks, and file-link anchors
+  const handleClick = useCallback(async (e: React.MouseEvent) => {
+    // The target can be a Text node: use its parent element for closest()
+    const targetNode = e.target as unknown as Node;
+    const target = targetNode.nodeType === Node.TEXT_NODE
+      ? (targetNode as Text).parentElement
+      : (e.target as HTMLElement);
+    if (!target) return;
+
+    const copyBtn = target.closest('button.copy-code-btn') as HTMLButtonElement | null;
+    if (copyBtn && contentRef.current?.contains(copyBtn)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const codeElement = copyBtn
+        .closest('.code-block-wrapper')
+        ?.querySelector('pre code') as HTMLElement | null;
+      const text = codeElement?.textContent ?? '';
+      if (await copyToClipboard(text)) {
+        copyBtn.classList.add('copied');
+        window.setTimeout(() => copyBtn.classList.remove('copied'), 1500);
+      }
+      return;
+    }
+
     const anchor = target.closest('a[data-linkify="file"]') as HTMLAnchorElement | null;
     if (anchor) {
       e.preventDefault();
@@ -258,7 +449,7 @@ const CollapsibleTextBlock: React.FC<CollapsibleTextBlockProps> = ({ content }) 
         onClick={handleClick}
       >
         <div
-          className="plain-text-content"
+          className="plain-text-content markdown-content"
           dangerouslySetInnerHTML={{ __html: htmlContent }}
         />
 

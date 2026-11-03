@@ -802,13 +802,9 @@
     word-break: break-all;
 }
 
-/* The user bubble has a coloured background: keep the bubble text colour */
+/* Inline code in the user bubble keeps the tinted colour of inline code,
+   on the darker user code background (set above) */
 .message.user .markdown-content :not(pre) > code {
-    color: var(--color-message-user-text);
-}
-
-.message.user /* Inline code (not a code block) gets the tinted colour */
-.markdown-content :not(pre) > code {
     color: var(--color-code-inline-fg);
 }
 
