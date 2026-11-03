@@ -10,12 +10,14 @@ import {
 } from './commitMessage';
 import { SessionTemplateService } from './sessionTemplate';
 import { registerSetupWizard } from './setupWizard';
+import { RemoteControlService } from './remoteControl';
 
 export function activate(context: vscode.ExtensionContext) {
   const bridge = new BridgeServer(context);
   const panel = new CcGuiPanel(context, bridge);
   const sessionTemplates = new SessionTemplateService(context, bridge, panel);
-  context.subscriptions.push(bridge);
+  const remoteControl = new RemoteControlService(context);
+  context.subscriptions.push(bridge, remoteControl);
 
   registerSetupWizard(context);
 
@@ -182,6 +184,14 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('ccGui.createSessionFromTemplate', async () => {
       await sessionTemplates.createSessionFromTemplate();
+    }),
+
+    vscode.commands.registerCommand('ccGui.startRemoteControl', async () => {
+      try {
+        await remoteControl.start();
+      } catch (error: any) {
+        vscode.window.showErrorMessage(`Could not start Remote Control: ${error?.message || String(error)}`);
+      }
     })
   );
 }

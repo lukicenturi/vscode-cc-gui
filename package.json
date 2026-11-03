@@ -156,6 +156,13 @@
         "title": "%ccGui.command.runSetupWizard.title%",
         "category": "%ccGui.command.category%"
       }
+,
+      {
+        "command": "ccGui.startRemoteControl",
+        "title": "%ccGui.command.startRemoteControl.title%",
+        "category": "%ccGui.command.category%",
+        "icon": "$(device-mobile)"
+      }
     ],
     "menus": {
       "editor/title": [
@@ -211,6 +218,11 @@
           "group": "navigation"
         },
         {
+          "command": "ccGui.startRemoteControl",
+          "when": "view == ccGui.mainView || view == ccGui.secondaryView",
+          "group": "navigation"
+        },
+        {
           "command": "ccGui.openDevTools",
           "when": "ccGui.enableDebugLog && (view == ccGui.mainView || view == ccGui.secondaryView)",
           "group": "navigation"
@@ -248,6 +260,21 @@
           "type": "boolean",
           "default": false,
           "description": "%ccGui.configuration.enableDebugLog.description%"
+        },
+        "ccGui.remoteControl.claudePath": {
+          "type": "string",
+          "default": "claude",
+          "description": "%ccGui.configuration.remoteControl.claudePath.description%"
+        },
+        "ccGui.remoteControl.keepAwake": {
+          "type": "boolean",
+          "default": true,
+          "description": "%ccGui.configuration.remoteControl.keepAwake.description%"
+        },
+        "ccGui.remoteControl.extraArgs": {
+          "type": "string",
+          "default": "",
+          "description": "%ccGui.configuration.remoteControl.extraArgs.description%"
         }
       }
     }
