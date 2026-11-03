@@ -2202,12 +2202,15 @@ export class BridgeServer {
       // persisted ON setting — so users do not need to toggle the switch to verify.
       // Use force writer (not the gated facade) so the marker is never dropped.
       this._logAppendLine(`[CC GUI] Debug log enabled (ccGui.enableDebugLog) at ${new Date().toISOString()}`);
-      // Select this channel in the Output panel. Without show(), dispose+recreate
-      // can leave the panel stuck on a disposed/empty view even though logs write.
-      try {
-        this._rawLog.show(true);
-      } catch {
-        // ignore UI failures
+      // Select this channel in the Output panel only when the user turns the
+      // setting on. On a cold start with a persisted ON setting the panel must
+      // stay closed, otherwise every window reload opens the Output tab.
+      if (fromConfigChange) {
+        try {
+          this._rawLog.show(true);
+        } catch {
+          // ignore UI failures
+        }
       }
     } else if (fromConfigChange) {
       this._logAppendLine('[CC GUI] Debug log disabled (ccGui.enableDebugLog)');
