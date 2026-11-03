@@ -7,6 +7,27 @@ import WaitingIndicator from './WaitingIndicator';
 import { ContextMenu } from './ContextMenu';
 import { useContextMenu, copySelection } from '../hooks/useContextMenu.js';
 import { formatQuote } from '../utils/quoteFormat';
+
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+const QUOTE_SHORTCUT_LABEL = IS_MAC ? '⌘⇧Q' : 'Ctrl+Shift+Q';
+
+function isQuoteShortcut(e: KeyboardEvent): boolean {
+  const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+  return mod && e.shiftKey && !e.altKey && (e.key === 'q' || e.key === 'Q');
+}
+
+/** Put the selected text into the chat input as a quote chip. */
+function quoteSelection(selectedText: string): void {
+  const quote = formatQuote(selectedText);
+  if (!quote) return;
+  // Show the quote as a chip in the input. The sent text has the same
+  // markdown block quote. Older inputs get the plain text.
+  if (window.insertQuoteIntoChatInput) {
+    window.insertQuoteIntoChatInput(selectedText);
+  } else {
+    window.insertTextIntoChatInput?.(quote);
+  }
+}
 import type { MessageListRevealHandle } from './ConversationSearch/types';
 
 /** Always render at least this many recent messages. Earlier messages are collapsed. */
@@ -97,6 +118,25 @@ export const MessageList = memo(forwardRef<MessageListRevealHandle, MessageListP
     }
   }, [ctxMenu.open]);
 
+  // Quote shortcut: Cmd+Shift+Q (macOS) / Ctrl+Shift+Q when the selection
+  // lies inside the message list. Listen on the document because the
+  // selection, not the focus, decides where the key applies.
+  const listRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isQuoteShortcut(e)) return;
+      const sel = window.getSelection();
+      const text = sel?.toString() ?? '';
+      if (!sel || sel.rangeCount === 0 || !text.trim()) return;
+      const anchor = sel.getRangeAt(0).commonAncestorContainer;
+      if (!listRef.current?.contains(anchor)) return;
+      e.preventDefault();
+      quoteSelection(text);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   // Reset revealed count when a new session starts (first message ID changes)
   const firstMsgIdRef = useRef(messages[0]?.id);
   useEffect(() => {
@@ -144,28 +184,19 @@ export const MessageList = memo(forwardRef<MessageListRevealHandle, MessageListP
   const messageKeys = useMemo(() => getMessageKeys(messages), [messages]);
 
   return (
-    <div onContextMenu={handleMessageContextMenu}>
+    <div ref={listRef} onContextMenu={handleMessageContextMenu}>
       {ctxMenu.visible && (
         <ContextMenu
           x={ctxMenu.x}
           y={ctxMenu.y}
           onClose={ctxMenu.close}
           items={[
-            { label: t('contextMenu.copy', 'Copy'), action: () => copySelection(ctxMenu.savedRange, ctxMenu.selectedText) },
             {
               label: t('contextMenu.quote', 'Quote'),
-              action: () => {
-                const quote = formatQuote(ctxMenu.selectedText);
-                if (!quote) return;
-                // Show the quote as a chip in the input. The sent text has the
-                // same markdown block quote. Older inputs get the plain text.
-                if (window.insertQuoteIntoChatInput) {
-                  window.insertQuoteIntoChatInput(ctxMenu.selectedText);
-                } else {
-                  window.insertTextIntoChatInput?.(quote);
-                }
-              },
+              shortcut: QUOTE_SHORTCUT_LABEL,
+              action: () => quoteSelection(ctxMenu.selectedText),
             },
+            { label: t('contextMenu.copy', 'Copy'), action: () => copySelection(ctxMenu.savedRange, ctxMenu.selectedText) },
           ]}
         />
       )}

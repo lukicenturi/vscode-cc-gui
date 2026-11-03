@@ -4,7 +4,7 @@ import './ContextMenu.css';
 
 export type ContextMenuItem =
   | { separator: true }
-  | { separator?: false; label: string; action: () => void; disabled?: boolean };
+  | { separator?: false; label: string; action: () => void; disabled?: boolean; shortcut?: string };
 
 interface ContextMenuProps {
   x: number;
@@ -90,7 +90,8 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
               }
             }}
           >
-            {item.label}
+            <span className="context-menu-label">{item.label}</span>
+            {item.shortcut && <span className="context-menu-shortcut">{item.shortcut}</span>}
           </div>
         )
       )}

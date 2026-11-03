@@ -224,6 +224,23 @@ describe('MessageList context menu', () => {
     delete window.insertQuoteIntoChatInput;
   });
 
+  it('quotes the selection on Cmd/Ctrl+Shift+Q when the selection is in the list', () => {
+    const insertQuote = vi.fn();
+    window.insertQuoteIntoChatInput = insertQuote;
+    const { container } = renderList(makeMessages(2));
+    const item = container.querySelector('[data-testid="message-item"]') as HTMLElement;
+    const range = document.createRange();
+    range.selectNodeContents(item);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    fireEvent.keyDown(document, { key: 'q', shiftKey: true, metaKey: true, ctrlKey: true });
+
+    expect(insertQuote).toHaveBeenCalledWith(item.textContent);
+    sel.removeAllRanges();
+  });
+
   it('shows Copy and Quote items when the menu is open', () => {
     ctxMenuState.visible = true;
     ctxMenuState.selectedText = 'hello';
