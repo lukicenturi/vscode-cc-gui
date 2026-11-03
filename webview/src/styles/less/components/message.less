@@ -804,7 +804,9 @@
 
 /* The user bubble is blue in both themes, so inline code there uses its own
    bright orange and a light chip, independent of the theme tint */
-.message.user .markdown-content :not(pre) > code {
+/* No `:not(pre) > code` here: in the user bubble the inline <code> is a direct
+   child of the container (no <p> wrapper), so that selector never matches. */
+.message.user .markdown-content code {
     color: var(--color-message-user-code-fg);
 }
 
