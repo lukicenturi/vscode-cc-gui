@@ -238,19 +238,24 @@ export function useGlobalCallbacks({
       selection?.addRange(range);
     };
 
-    const appendExternalSnippetToEnd = (selectionInfo: string) => {
+    // Append plain text at the end of the input. When the input already has
+    // content that does not end with a newline, a '\n' separator goes first.
+    // The caret moves to the end of the inserted text.
+    const appendTextToEnd = (text: string) => {
       if (!editableRef.current) return;
 
       const existingText = getTextContent();
       const hasExistingContent = !!existingText.trim();
       const needsLeadingNewline = hasExistingContent && !/\n\s*$/.test(existingText);
-      const fragment = createTextFragment(
-        `${needsLeadingNewline ? '\n' : ''}${selectionInfo} `
-      );
+      const fragment = createTextFragment(`${needsLeadingNewline ? '\n' : ''}${text}`);
       const lastChild = fragment.lastChild;
 
       editableRef.current.appendChild(fragment);
       moveCaretAfterNode(lastChild);
+    };
+
+    const appendExternalSnippetToEnd = (selectionInfo: string) => {
+      appendTextToEnd(`${selectionInfo} `);
     };
 
     const tryInsertExternalSnippetAtCaret = (selectionInfo: string): boolean => {
@@ -341,12 +346,34 @@ export function useGlobalCallbacks({
       }
     };
 
+    // Append plain text (for example a quote of a message selection) at the
+    // end of the input. The text does not go through the @file reference
+    // parsing, and existing file tags stay as they are.
+    window.insertTextIntoChatInput = (text: string) => {
+      try {
+        if (!editableRef.current || !text) return;
+
+        editableRef.current.focus();
+        appendTextToEnd(text);
+
+        const newText = getTextContent();
+        setHasContent(!!newText.trim());
+        adjustHeight();
+        onInput?.(newText);
+
+        editableRef.current.focus();
+      } catch (error) {
+        console.error('[useGlobalCallbacks] insertTextIntoChatInput failed:', error);
+      }
+    };
+
     window.focusChatInput = () => {
       focusInput();
     };
 
     return () => {
       delete window.insertCodeSnippetAtCursor;
+      delete window.insertTextIntoChatInput;
       delete window.focusChatInput;
     };
   }, [editableRef, pathMappingRef, getTextContent, renderFileTags, adjustHeight, onInput, setHasContent, focusInput]);

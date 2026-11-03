@@ -2025,5 +2025,9 @@
         }
       }
     }
+  },
+  "contextMenu": {
+    "copy": "Copiar",
+    "quote": "Citar"
   }
 }

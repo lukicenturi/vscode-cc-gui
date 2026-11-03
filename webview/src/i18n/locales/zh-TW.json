@@ -1931,5 +1931,9 @@
     "user": {
       "description": "安裝在 DSH 主目錄中的自訂預設"
     }
+  },
+  "contextMenu": {
+    "copy": "複製",
+    "quote": "引用"
   }
 }

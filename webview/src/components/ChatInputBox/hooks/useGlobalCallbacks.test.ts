@@ -91,6 +91,7 @@ describe('useGlobalCallbacks', () => {
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
     delete window.insertCodeSnippetAtCursor;
+    delete window.insertTextIntoChatInput;
     delete window.handleFilePathFromJava;
     document.body.innerHTML = '';
   });
@@ -234,5 +235,93 @@ describe('useGlobalCallbacks', () => {
     expect(pathMappingRef.current.get('index.vue')).toBe(
       'C:\\project\\pages\\index.vue'
     );
+  });
+
+  describe('insertTextIntoChatInput', () => {
+    function caretIsAtEnd(editable: HTMLDivElement): boolean {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return false;
+      const range = selection.getRangeAt(0);
+      const endRange = document.createRange();
+      endRange.selectNodeContents(editable);
+      endRange.collapse(false);
+      return range.collapsed && range.compareBoundaryPoints(Range.START_TO_START, endRange) === 0;
+    }
+
+    it('appends text to an empty input, updates state and focuses the input', () => {
+      const editable = createEditable();
+      const { getTextContent, setHasContent, adjustHeight, onInput } = renderUseGlobalCallbacks(editable);
+
+      window.insertTextIntoChatInput?.('> quoted\n\n');
+
+      expect(getTextContent()).toBe('> quoted\n\n');
+      expect(setHasContent).toHaveBeenCalledWith(true);
+      expect(adjustHeight).toHaveBeenCalled();
+      expect(onInput).toHaveBeenCalledWith('> quoted\n\n');
+      expect(document.activeElement).toBe(editable);
+      expect(caretIsAtEnd(editable)).toBe(true);
+    });
+
+    it('adds a newline separator when existing content does not end with a newline', () => {
+      const editable = createEditable();
+      editable.appendChild(document.createTextNode('draft question'));
+      const { getTextContent } = renderUseGlobalCallbacks(editable);
+
+      window.insertTextIntoChatInput?.('> quoted\n\n');
+
+      expect(getTextContent()).toBe('draft question\n> quoted\n\n');
+      expect(caretIsAtEnd(editable)).toBe(true);
+    });
+
+    it('does not add a separator when existing content ends with a newline', () => {
+      const editable = createEditable();
+      editable.appendChild(document.createTextNode('draft question'));
+      editable.appendChild(document.createElement('br'));
+      const { getTextContent } = renderUseGlobalCallbacks(editable);
+
+      window.insertTextIntoChatInput?.('> quoted\n\n');
+
+      expect(getTextContent()).toBe('draft question\n> quoted\n\n');
+    });
+
+    it('appends at the end even when the caret is inside the input', () => {
+      const editable = createEditable();
+      editable.appendChild(document.createTextNode('abcdef'));
+      const { getTextContent } = renderUseGlobalCallbacks(editable);
+      placeCaretInsideFirstTextNode(editable, 3);
+      editable.dispatchEvent(new Event('pointerup'));
+
+      window.insertTextIntoChatInput?.('> q\n\n');
+
+      expect(getTextContent()).toBe('abcdef\n> q\n\n');
+    });
+
+    it('does not parse file references and keeps existing file tags', () => {
+      const editable = createEditable();
+      const tag = document.createElement('span');
+      tag.className = 'file-tag';
+      tag.setAttribute('data-file-path', '/abs/existing.ts');
+      editable.appendChild(tag);
+      editable.appendChild(document.createTextNode(' note'));
+      const { pathMappingRef, renderFileTags } = renderUseGlobalCallbacks(editable);
+
+      window.insertTextIntoChatInput?.('> see @/abs/other.ts\n\n');
+      vi.runAllTimers();
+
+      expect(editable.contains(tag)).toBe(true);
+      expect(editable.firstChild).toBe(tag);
+      expect(pathMappingRef.current.size).toBe(0);
+      expect(renderFileTags).not.toHaveBeenCalled();
+    });
+
+    it('ignores empty text', () => {
+      const editable = createEditable();
+      const { onInput } = renderUseGlobalCallbacks(editable);
+
+      window.insertTextIntoChatInput?.('');
+
+      expect(editable.childNodes.length).toBe(0);
+      expect(onInput).not.toHaveBeenCalled();
+    });
   });
 });

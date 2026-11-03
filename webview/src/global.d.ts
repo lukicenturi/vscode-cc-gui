@@ -203,6 +203,12 @@ interface Window {
   insertCodeSnippetAtCursor?: (selectionInfo: string) => void;
 
   /**
+   * Append plain text at the end of the chat input and focus it - registered by ChatInputBox.
+   * The text does not go through the @file reference parsing.
+   */
+  insertTextIntoChatInput?: (text: string) => void;
+
+  /**
    * Focus the chat input box - registered by ChatInputBox
    */
   focusChatInput?: () => void;

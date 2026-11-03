@@ -17,17 +17,27 @@ vi.mock('./WaitingIndicator', () => ({
   default: () => <div data-testid="waiting-indicator">waiting</div>,
 }));
 
+const ctxMenuState = vi.hoisted(() => ({ visible: false, selectedText: '' }));
+
 vi.mock('./ContextMenu', () => ({
-  ContextMenu: () => null,
+  ContextMenu: ({ items }: { items: Array<{ label: string; action: () => void }> }) => (
+    <div data-testid="context-menu">
+      {items.map((item) => (
+        <button key={item.label} type="button" onClick={item.action}>
+          {item.label}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 
 vi.mock('../hooks/useContextMenu.js', () => ({
   useContextMenu: () => ({
-    visible: false,
+    visible: ctxMenuState.visible,
     x: 0,
     y: 0,
     savedRange: null,
-    selectedText: '',
+    selectedText: ctxMenuState.selectedText,
     open: vi.fn(),
     close: vi.fn(),
   }),
@@ -202,5 +212,46 @@ describe('MessageList container behaviour', () => {
       />
     );
     expect(screen.getByTestId('waiting-indicator')).toBeTruthy();
+  });
+});
+
+describe('MessageList context menu', () => {
+  afterEach(() => {
+    cleanup();
+    ctxMenuState.visible = false;
+    ctxMenuState.selectedText = '';
+    delete window.insertTextIntoChatInput;
+  });
+
+  it('shows Copy and Quote items when the menu is open', () => {
+    ctxMenuState.visible = true;
+    ctxMenuState.selectedText = 'hello';
+    renderList(makeMessages(2));
+    expect(screen.getByText('contextMenu.copy')).toBeTruthy();
+    expect(screen.getByText('contextMenu.quote')).toBeTruthy();
+  });
+
+  it('inserts the selection as a markdown quote into the chat input', () => {
+    ctxMenuState.visible = true;
+    ctxMenuState.selectedText = 'line one\n\nline two';
+    const insert = vi.fn();
+    window.insertTextIntoChatInput = insert;
+    renderList(makeMessages(2));
+
+    fireEvent.click(screen.getByText('contextMenu.quote'));
+
+    expect(insert).toHaveBeenCalledWith('> line one\n>\n> line two\n\n');
+  });
+
+  it('does not insert anything for a whitespace-only selection', () => {
+    ctxMenuState.visible = true;
+    ctxMenuState.selectedText = '  \n ';
+    const insert = vi.fn();
+    window.insertTextIntoChatInput = insert;
+    renderList(makeMessages(2));
+
+    fireEvent.click(screen.getByText('contextMenu.quote'));
+
+    expect(insert).not.toHaveBeenCalled();
   });
 });

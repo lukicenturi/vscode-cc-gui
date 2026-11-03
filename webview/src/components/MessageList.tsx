@@ -6,6 +6,7 @@ import { MessageItem } from './MessageItem';
 import WaitingIndicator from './WaitingIndicator';
 import { ContextMenu } from './ContextMenu';
 import { useContextMenu, copySelection } from '../hooks/useContextMenu.js';
+import { formatQuote } from '../utils/quoteFormat';
 import type { MessageListRevealHandle } from './ConversationSearch/types';
 
 /** Always render at least this many recent messages. Earlier messages are collapsed. */
@@ -87,7 +88,7 @@ export const MessageList = memo(forwardRef<MessageListRevealHandle, MessageListP
   // mount when sessions exceed hundreds of messages.
   const [revealedCount, setRevealedCount] = useState(0);
 
-  // Context menu for message list (copy only, when text selected)
+  // Context menu for message list (copy and quote, when text selected)
   const ctxMenu = useContextMenu();
   const handleMessageContextMenu = useCallback((e: React.MouseEvent) => {
     const sel = window.getSelection();
@@ -148,6 +149,13 @@ export const MessageList = memo(forwardRef<MessageListRevealHandle, MessageListP
           onClose={ctxMenu.close}
           items={[
             { label: t('contextMenu.copy', 'Copy'), action: () => copySelection(ctxMenu.savedRange, ctxMenu.selectedText) },
+            {
+              label: t('contextMenu.quote', 'Quote'),
+              action: () => {
+                const quote = formatQuote(ctxMenu.selectedText);
+                if (quote) window.insertTextIntoChatInput?.(quote);
+              },
+            },
           ]}
         />
       )}

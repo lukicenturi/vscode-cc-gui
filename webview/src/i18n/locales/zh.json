@@ -2273,5 +2273,9 @@
     "user": {
       "description": "安装在 DSH 主目录中的自定义预设"
     }
+  },
+  "contextMenu": {
+    "copy": "复制",
+    "quote": "引用"
   }
 }

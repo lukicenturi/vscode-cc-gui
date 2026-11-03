@@ -2268,5 +2268,9 @@
     "user": {
       "description": "Custom preset installed under the DSH home"
     }
+  },
+  "contextMenu": {
+    "copy": "Copy",
+    "quote": "Quote"
   }
 }
