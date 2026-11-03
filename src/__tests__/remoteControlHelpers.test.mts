@@ -8,6 +8,8 @@ import {
   folderBasename,
   updateRecentFolders,
   validateSessionName,
+  bridgePointerPath,
+  isStaleBridgePointer,
 } from '../remoteControlHelpers.ts';
 
 describe('buildRemoteControlCommand', () => {
@@ -222,5 +224,27 @@ describe('buildFolderCandidates', () => {
     });
     assert.equal(result.filter((c) => c.source === 'recent').length, 8);
     assert.equal(result.length, 9);
+  });
+});
+
+describe('bridgePointerPath', () => {
+  it('encodes the folder like the CLI project directories', () => {
+    assert.equal(
+      bridgePointerPath('/Users/x/Sites/my app', '/Users/x'),
+      '/Users/x/.claude/projects/-Users-x-Sites-my-app/bridge-pointer.json',
+    );
+  });
+});
+
+describe('isStaleBridgePointer', () => {
+  it('is stale when the pid is not alive', () => {
+    assert.equal(isStaleBridgePointer('{"sessionId":"s","pid":123}', () => false), true);
+  });
+  it('is not stale when the pid is alive', () => {
+    assert.equal(isStaleBridgePointer('{"sessionId":"s","pid":123}', () => true), false);
+  });
+  it('is stale when the file cannot be parsed or has no pid', () => {
+    assert.equal(isStaleBridgePointer('not json', () => true), true);
+    assert.equal(isStaleBridgePointer('{"sessionId":"s"}', () => true), true);
   });
 });

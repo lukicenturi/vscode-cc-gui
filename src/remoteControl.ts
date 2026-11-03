@@ -1,9 +1,12 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as os from 'os';
 import {
   RECENT_FOLDERS_KEY,
   WORKING_DIRECTORY_KEY,
+  bridgePointerPath,
   buildFolderCandidates,
+  isStaleBridgePointer,
   buildRemoteControlCommand,
   defaultSessionName,
   folderBasename,
@@ -23,6 +26,33 @@ const SOURCE_DETAIL: Record<FolderCandidate['source'], string> = {
   workingDirectory: 'CC GUI working directory',
   recent: 'Recent',
 };
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means the process exists but belongs to another user.
+    return (error as NodeJS.ErrnoException)?.code === 'EPERM';
+  }
+}
+
+/**
+ * Remove a stale Remote Control pointer so the CLI creates a fresh session
+ * instead of re-adopting a dead one (see isStaleBridgePointer).
+ */
+function clearStaleBridgePointer(folder: string): void {
+  const pointer = bridgePointerPath(folder, os.homedir());
+  try {
+    if (!fs.existsSync(pointer)) return;
+    const contents = fs.readFileSync(pointer, 'utf8');
+    if (isStaleBridgePointer(contents, isPidAlive)) {
+      fs.unlinkSync(pointer);
+    }
+  } catch {
+    // Best effort: the CLI still starts, it may only re-adopt a dead session.
+  }
+}
 
 function isDirectory(folder: string): boolean {
   try {
@@ -80,6 +110,8 @@ export class RemoteControlService implements vscode.Disposable {
       platform: process.platform,
       extraArgs: config.get<string>('extraArgs', ''),
     });
+
+    clearStaleBridgePointer(folder);
 
     const terminal = vscode.window.createTerminal({
       name: `Remote Control: ${basename}`,

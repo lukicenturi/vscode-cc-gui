@@ -1,3 +1,4 @@
+import * as path from 'path';
 /**
  * Pure helpers for the "Start Remote Control" command.
  * This file has no `vscode` import, so node:test can load it directly.
@@ -158,4 +159,38 @@ export function buildFolderCandidates(input: FolderCandidateInput): FolderCandid
     if (add(folder, 'recent')) recentCount += 1;
   }
   return result;
+}
+
+/**
+ * Path of the Remote Control pointer file that `claude remote-control` writes
+ * for a folder: ~/.claude/projects/<encoded folder>/bridge-pointer.json.
+ * The CLI encodes the folder path like its project directories: every
+ * character that is not a letter or a digit becomes "-".
+ */
+export function bridgePointerPath(folder: string, homeDir: string): string {
+  const encoded = String(folder || '').replace(/[^a-zA-Z0-9]/g, '-');
+  return path.join(homeDir, '.claude', 'projects', encoded, 'bridge-pointer.json');
+}
+
+/**
+ * Decide whether a bridge pointer file is stale and must be removed before a
+ * new `claude remote-control` starts.
+ *
+ * The CLI reads this file at start and re-adopts the session that it names.
+ * When that session is no longer active on the server (for example after the
+ * previous server was stopped), the adopted session exits at once with
+ * "Process exited with error" and the capacity stays 0. A pointer whose pid
+ * is no longer alive is stale. A pointer that cannot be parsed is stale too.
+ */
+export function isStaleBridgePointer(contents: string, isPidAlive: (pid: number) => boolean): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents);
+  } catch {
+    return true;
+  }
+  if (!parsed || typeof parsed !== 'object') return true;
+  const pid = (parsed as { pid?: unknown }).pid;
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return true;
+  return !isPidAlive(pid);
 }
