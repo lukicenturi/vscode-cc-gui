@@ -67,6 +67,7 @@ interface UseStreamingMessagesReturn {
   recordStreamingBlockReset: () => void;
   clearStreamingBlockResets: () => void;
   rollbackStreamingBuffers: (contentChars: number, thinkingChars: number) => void;
+  resetStreamingContentBuffer: () => void;
 
   // Helper functions
   findLastAssistantIndex: (list: ClaudeMessage[]) => number;
@@ -167,6 +168,30 @@ export function useStreamingMessages(): UseStreamingMessagesReturn {
       thinkingLength: floor ? Math.min(floor.thinkingLength, thinkingLength) : thinkingLength,
     };
     rollbackEpochRef.current += 1;
+  };
+
+  /**
+   * Start the text buffer again from empty in the middle of a stream. The live
+   * tool-card insert calls this when it freezes the streamed text and opens a
+   * fresh streaming slot.
+   *
+   * The recorded block boundaries and the trailing structural boundary hold
+   * offsets into the OLD text buffer. If they stay, materializePendingStreamingBlocks
+   * cuts the next text (the final answer) at those old offsets into segments that
+   * overlap, so the answer shows as cut prefixes followed by the full text. Clamp
+   * the text offsets to 0. The thinking buffer is not reset, so its offsets stay.
+   */
+  const resetStreamingContentBuffer = (): void => {
+    streamingContentRef.current = '';
+    streamingBlockBoundariesRef.current = clampStreamingBlockBoundaries(
+      streamingBlockBoundariesRef.current,
+      0,
+      (streamingThinkingRef.current || '').length,
+    );
+    trailingStructuralTextBoundaryRef.current = null;
+    if (rollbackFloorRef.current) {
+      rollbackFloorRef.current = { ...rollbackFloorRef.current, contentLength: 0 };
+    }
   };
 
   const getBlockText = (block: ContentBlock, kind: 'text' | 'thinking'): string => {
@@ -625,6 +650,7 @@ export function useStreamingMessages(): UseStreamingMessagesReturn {
     recordStreamingBlockReset,
     clearStreamingBlockResets,
     rollbackStreamingBuffers,
+    resetStreamingContentBuffer,
 
     // Helper functions
     findLastAssistantIndex,

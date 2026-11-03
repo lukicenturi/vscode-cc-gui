@@ -57,6 +57,33 @@ export function getMessageKey(message: ClaudeMessage, index: number): string {
   return message.timestamp ? `${message.type}-${message.timestamp}` : `${message.type}-${index}`;
 }
 
+/**
+ * Keys for a whole message list, unique inside that list.
+ *
+ * getMessageKey alone is not unique: the live tool-card insert during a
+ * streaming turn (applyCodexLiveMessage) splits one turn into several
+ * messages that all carry the same __turnId and no uuid (the frozen text
+ * segment, the fresh streaming slot, Codex tool cards), so they all get
+ * `turn-<id>`. With duplicate keys React cannot match the old and new
+ * children when the list shifts (the 15-message window slides, or the next
+ * turn starts). It then leaves the DOM node of the duplicate behind, and the
+ * same text shows two or more times (for a streaming slot, as a cut prefix).
+ *
+ * Repeated keys get an occurrence suffix in list order. The first message
+ * keeps the plain key, so the frozen segment keeps the node that it streamed
+ * into. Compute the keys over the full list (not a visible slice), so that a
+ * message keeps its key when the visible window slides.
+ */
+export function getMessageKeys(messages: ClaudeMessage[]): string[] {
+  const seen = new Map<string, number>();
+  return messages.map((message, index) => {
+    const key = getMessageKey(message, index);
+    const count = seen.get(key) ?? 0;
+    seen.set(key, count + 1);
+    return count === 0 ? key : `${key}#${count}`;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Type guards - safer than type assertions
 // ---------------------------------------------------------------------------

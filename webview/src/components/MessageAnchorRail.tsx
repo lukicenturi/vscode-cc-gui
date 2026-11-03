@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ClaudeMessage } from '../types';
-import { getMessageKey } from '../utils/messageUtils';
+import { getMessageKeys } from '../utils/messageUtils';
 
 interface AnchorItem {
   id: string;
@@ -75,11 +75,13 @@ export const MessageAnchorRail = memo(function MessageAnchorRail({
   // Compute anchor items from visible user messages only (skip collapsed ones)
   const anchors = useMemo<AnchorItem[]>(() => {
     const userMessages: AnchorItem[] = [];
+    // Same keys as MessageList, so that the anchor ids match the node map.
+    const messageKeys = getMessageKeys(messages);
     const startIndex = collapsedCount;
     for (let i = startIndex; i < messages.length; i++) {
       if (messages[i].type === 'user') {
         userMessages.push({
-          id: getMessageKey(messages[i], i),
+          id: messageKeys[i],
           position: 0,
           preview: getMessagePreview(messages[i]),
         });

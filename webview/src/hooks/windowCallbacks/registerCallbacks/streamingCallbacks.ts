@@ -188,6 +188,7 @@ export function registerStreamingCallbacks(options: UseWindowCallbacksOptions): 
     recordStreamingBlockReset,
     clearStreamingBlockResets,
     rollbackStreamingBuffers,
+    resetStreamingContentBuffer,
     isStreamingRef,
     useBackendStreamingRenderRef,
     autoExpandedThinkingKeysRef,
@@ -992,7 +993,13 @@ export function registerStreamingCallbacks(options: UseWindowCallbacksOptions): 
       }
       streamingMessageIndexRef.current = res.streamingIndex;
       if (res.openedFreshSlot) {
-        streamingContentRef.current = '';
+        // Also drop the block boundaries of the old buffer (see
+        // resetStreamingContentBuffer), or the next text is cut at old offsets.
+        if (resetStreamingContentBuffer) {
+          resetStreamingContentBuffer();
+        } else {
+          streamingContentRef.current = '';
+        }
       }
       return res.messages;
     });

@@ -74,6 +74,7 @@ export interface UseWindowCallbacksOptions {
   recordStreamingBlockReset?: () => void;
   clearStreamingBlockResets?: () => void;
   rollbackStreamingBuffers?: (contentChars: number, thinkingChars: number) => void;
+  resetStreamingContentBuffer?: () => void;
   isStreamingRef: MutableRefObject<boolean>;
   useBackendStreamingRenderRef: MutableRefObject<boolean>;
   autoExpandedThinkingKeysRef: MutableRefObject<Set<string>>;

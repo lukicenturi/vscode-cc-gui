@@ -1,7 +1,7 @@
 import { memo, useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
 import type { TFunction } from 'i18next';
 import type { ClaudeMessage, ClaudeContentBlock, ToolResultBlock } from '../types';
-import { getMessageKey } from '../utils/messageUtils';
+import { getMessageKeys } from '../utils/messageUtils';
 import { MessageItem } from './MessageItem';
 import WaitingIndicator from './WaitingIndicator';
 import { ContextMenu } from './ContextMenu';
@@ -139,6 +139,9 @@ export const MessageList = memo(forwardRef<MessageListRevealHandle, MessageListP
     () => (shouldCollapse ? messages.slice(collapsedCount) : messages),
     [messages, shouldCollapse, collapsedCount]
   );
+  // Unique keys over the full list (see getMessageKeys): duplicate keys make
+  // React leave stale message nodes behind, which shows the same text twice.
+  const messageKeys = useMemo(() => getMessageKeys(messages), [messages]);
 
   return (
     <div onContextMenu={handleMessageContextMenu}>
@@ -171,7 +174,7 @@ export const MessageList = memo(forwardRef<MessageListRevealHandle, MessageListP
 
       {visibleMessages.map((message, visibleIndex) => {
         const messageIndex = shouldCollapse ? visibleIndex + collapsedCount : visibleIndex;
-        const messageKey = getMessageKey(message, messageIndex);
+        const messageKey = messageKeys[messageIndex];
         const toolResultSignature = getMessageToolResultSignature(message, messageIndex, getContentBlocks, findToolResult);
 
         return (
