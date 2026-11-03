@@ -43,6 +43,7 @@ export interface BridgeCallbacks {
   frontendReady(webview: vscode.Webview): void;
   createNewSession(webview: vscode.Webview): void;
   createNewTab(webview: vscode.Webview): void;
+  startRemoteControl(): void;
   tabLoadingChanged(content: string): void;
   tabStatusChanged(content: string): void;
   updateStatusBarWidgetEnabled(enabled: boolean): void;

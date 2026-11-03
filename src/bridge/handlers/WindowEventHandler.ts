@@ -5,6 +5,7 @@ export class WindowEventHandler implements BridgeHandler {
     'frontend_ready',
     'create_new_session',
     'create_new_tab',
+    'start_remote_control',
     'tab_loading_changed',
     'tab_status_changed',
     'refresh_slash_commands',
@@ -22,6 +23,9 @@ export class WindowEventHandler implements BridgeHandler {
         return true;
       case 'create_new_tab':
         this.context.callbacks.createNewTab(webview);
+        return true;
+      case 'start_remote_control':
+        this.context.callbacks.startRemoteControl();
         return true;
       case 'tab_loading_changed':
         this.context.callbacks.tabLoadingChanged(content);

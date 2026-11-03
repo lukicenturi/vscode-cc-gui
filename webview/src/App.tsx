@@ -480,6 +480,7 @@ const App = () => {
         onBack={() => setCurrentView('chat')}
         onNewSession={createNewSession}
         onNewTab={() => sendBridgeEvent('create_new_tab')}
+        onRemoteControl={() => sendBridgeEvent('start_remote_control')}
         onHistory={() => setCurrentView('history')}
         onSettings={() => {
           setSettingsInitialTab(undefined);

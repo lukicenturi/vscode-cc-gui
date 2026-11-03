@@ -406,6 +406,9 @@ export class BridgeServer {
         createNewTab: () => {
           this._createTabCallback?.();
         },
+        startRemoteControl: () => {
+          void vscode.commands.executeCommand('ccGui.startRemoteControl');
+        },
         tabLoadingChanged: (content) => {
           this._handleTabLoadingChanged(content);
         },

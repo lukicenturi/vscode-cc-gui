@@ -17,6 +17,11 @@ export interface ChatHeaderProps {
    * Wired up by App.tsx via UIStateContext.setSearchOpen.
    */
   onOpenSearch?: () => void;
+  /**
+   * Starts Claude Code Remote Control so that a phone can join the session.
+   * Only rendered when provided.
+   */
+  onRemoteControl?: () => void;
   onTitleChange?: (newTitle: string) => void;
   titleEditable?: boolean;
   /**
@@ -39,6 +44,7 @@ export function ChatHeader({
   onHistory,
   onSettings,
   onOpenSearch,
+  onRemoteControl,
   onTitleChange,
   titleEditable = false,
   canReturnToLiveSession = false,
@@ -199,6 +205,16 @@ export function ChatHeader({
             >
               <span className="codicon codicon-history" />
             </button>
+            {onRemoteControl && (
+              <button
+                className="icon-button"
+                onClick={onRemoteControl}
+                data-tooltip={t('common.remoteControl')}
+                aria-label={t('common.remoteControl')}
+              >
+                <span className="codicon codicon-device-mobile" />
+              </button>
+            )}
             <button
               className="icon-button"
               onClick={onSettings}
