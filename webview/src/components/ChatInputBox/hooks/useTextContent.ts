@@ -47,6 +47,8 @@ interface ExtractEditableTextOptions {
  *   between them and the text is the same as the text that the user typed.
  *   The hidden ``` lines give their text. The language badge
  *   (span.input-code-fence-lang) gives no text.
+ * - An inline code span (span.input-inline-code) gives its text with the
+ *   backticks: the hidden backtick spans give their text, as plain spans do.
  *
  * Performance: uses array + join instead of string concatenation (O(n) vs O(n^2)).
  */

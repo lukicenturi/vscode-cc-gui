@@ -156,8 +156,8 @@ describe('decorateCodeFences', () => {
     expect(extractEditableText(editable)).toBe(text);
   });
 
-  it('does not touch the DOM when the text has no fence', () => {
-    const editable = makeEditable('plain `code` text\nline 2');
+  it('does not touch the DOM when the text has no fence and no inline code', () => {
+    const editable = makeEditable('plain `code text\nline 2 ``x``');
     const before = editable.innerHTML;
     const child = editable.firstChild;
 

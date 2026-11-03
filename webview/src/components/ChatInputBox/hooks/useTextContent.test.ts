@@ -61,5 +61,37 @@ describe('useTextContent', () => {
 
     expect(extractEditableText(editable)).toBe('intro\n```ts\nconst a = 1;\n\n```\nafter');
   });
-});
 
+  it('reads an inline code span with its hidden backticks', () => {
+    const editable = document.createElement('div');
+    editable.innerHTML = [
+      '<div>see ',
+      '<span class="input-inline-code">',
+      '<span class="input-inline-code-tick" contenteditable="false">`</span>',
+      'foo.ts',
+      '<span class="input-inline-code-tick" contenteditable="false">`</span>',
+      '</span>',
+      ' and <span class="input-inline-code">',
+      '<span class="input-inline-code-tick" contenteditable="false">`</span>',
+      'b',
+      '<span class="input-inline-code-tick" contenteditable="false">`</span>',
+      '</span></div>',
+      '<div>next</div>',
+    ].join('');
+
+    expect(extractEditableText(editable)).toBe('see `foo.ts` and `b`\nnext');
+  });
+
+  it('gives the same text before and after the inline code decoration', async () => {
+    const { decorateInputMarkup } = await import('../utils/codeFenceDecoration.js');
+    const editable = document.createElement('div');
+    const text = 'a `b` c\n```\n`d`\n```\n`e';
+    editable.appendChild(document.createTextNode(text));
+    const before = extractEditableText(editable);
+
+    expect(decorateInputMarkup(editable, { allowNewLine: false })).toBe(true);
+    expect(editable.querySelectorAll('.input-inline-code')).toHaveLength(1);
+    expect(extractEditableText(editable)).toBe(before);
+    expect(before).toBe(text);
+  });
+});

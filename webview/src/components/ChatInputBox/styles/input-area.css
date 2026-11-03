@@ -190,3 +190,26 @@
   background: var(--color-code-block-bg, rgba(0, 0, 0, 0.05));
   border-color: var(--color-code-block-border, #d0d0d0);
 }
+
+/* ============================================================
+   Inline code in the input (`foo` shows as inline code)
+   The DOM is built by utils/codeFenceDecoration.ts.
+   ============================================================ */
+.input-inline-code {
+  font-family: var(--cc-gui-code-font-family, var(--idea-editor-font-family, 'JetBrains Mono', 'Consolas', monospace));
+  font-size: 0.9em;
+  color: var(--color-code-inline-fg, #f2a76a);
+  background: var(--color-code-inline-bg, rgba(242, 167, 106, 0.12));
+  border-radius: 3px;
+  padding: 1px 3px;
+}
+
+/* The backticks stay in the DOM (the text keeps them), but do not show.
+   The decoration keeps the caret out of them. */
+.input-inline-code-tick {
+  display: inline-block;
+  width: 0;
+  overflow: hidden;
+  font-size: 0;
+  vertical-align: top;
+}

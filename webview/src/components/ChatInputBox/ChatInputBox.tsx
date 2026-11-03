@@ -188,7 +188,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       onCloseCompletions: closeAllCompletions,
     });
 
-    // Code fence decoration: show ``` fenced regions as code blocks
+    // Markdown decoration: show ``` fenced regions as code blocks and `x` as inline code
     const {
       decorateNow: decorateCodeFencesNow,
       scheduleDecoration: scheduleCodeFenceDecoration,
@@ -199,7 +199,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       onTextChange: () => handleInputRef.current(),
     });
 
-    // renderFileTags rebuilds the input HTML, so decorate the code fences again after it
+    // renderFileTags rebuilds the input HTML, so decorate the code again after it
     const renderFileTags = useCallback(() => {
       renderFileTagsOnly();
       decorateCodeFencesNow();

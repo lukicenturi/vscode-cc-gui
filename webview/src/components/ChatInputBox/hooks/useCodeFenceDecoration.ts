@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { DEBOUNCE_TIMING } from '../../../constants/performance.js';
 import { debounce } from '../utils/debounce.js';
-import { decorateCodeFences } from '../utils/codeFenceDecoration.js';
+import { decorateInputMarkup } from '../utils/codeFenceDecoration.js';
 
 interface UseCodeFenceDecorationOptions {
   editableRef: React.RefObject<HTMLDivElement | null>;
@@ -16,14 +16,15 @@ interface UseCodeFenceDecorationOptions {
 }
 
 interface UseCodeFenceDecorationReturn {
-  /** Decorate the code fences now */
+  /** Decorate the code fences and the inline code now */
   decorateNow: () => void;
-  /** Decorate the code fences after a short delay (use on input) */
+  /** Decorate the code fences and the inline code after a short delay (use on input) */
   scheduleDecoration: () => void;
 }
 
 /**
- * useCodeFenceDecoration - Show ``` fenced regions of the chat input as code blocks
+ * useCodeFenceDecoration - Show ``` fenced regions of the chat input as code blocks,
+ * and `inline code` on the other lines as inline code spans
  *
  * The decoration does not change the text, except for one case: when the
  * caret is in a hidden closing ``` line and no line follows the block, it adds
@@ -44,7 +45,7 @@ export function useCodeFenceDecoration({
   const decorateNow = useCallback(() => {
     const el = editableRef.current;
     if (!el || isComposingRef.current) return;
-    decorateCodeFences(el, { onTextChange: () => onTextChangeRef.current?.() });
+    decorateInputMarkup(el, { onTextChange: () => onTextChangeRef.current?.() });
   }, [editableRef, isComposingRef]);
 
   const debouncedDecorate = useMemo(

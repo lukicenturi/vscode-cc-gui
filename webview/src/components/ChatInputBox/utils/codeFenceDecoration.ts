@@ -32,6 +32,19 @@
  * A closed fence with a language shows the language in a badge. The badge
  * is an empty element. The CSS shows its data-lang value, thus the badge
  * gives no text.
+ *
+ * Inline code: on a line outside of a fence, a pair of single backticks
+ * (`foo.ts`) shows as inline code. The decoration occurs only when the
+ * closing backtick is in the text:
+ *
+ *   <div>see <span class="input-inline-code"><span class="input-inline-code-tick"
+ *        contenteditable="false">`</span>foo.ts<span class="input-inline-code-tick"
+ *        contenteditable="false">`</span></span> here</div>
+ *
+ * The CSS hides the backtick spans, but they stay in the DOM, thus the text
+ * does not change. The caret must not stay in a backtick span:
+ * ensureCaretOutsideHiddenTick moves it to a visible position at the same
+ * text offset.
  */
 
 import { extractEditableText } from '../hooks/useTextContent.js';
@@ -50,8 +63,15 @@ export const CODE_FENCE_HIDE_MARKERS_CLASS = 'input-code-fence-hide-markers';
 /** The language badge of a closed fence (an empty, non-editable element) */
 export const CODE_FENCE_LANG_CLASS = 'input-code-fence-lang';
 
-/** Text that must occur in the input before the decoration parses it. */
+/** An inline code span (`foo`) on a line outside of a fence */
+export const INLINE_CODE_CLASS = 'input-inline-code';
+/** A hidden backtick of an inline code span */
+export const INLINE_CODE_TICK_CLASS = 'input-inline-code-tick';
+
+/** Text that must occur in the input before it can have a code fence. */
 const FENCE_HINT = '```';
+/** Text that must occur in the input before the decoration parses it. */
+const BACKTICK = '`';
 
 /**
  * Stands in for an atomic tag (file tag or quote chip) in the text that the
@@ -123,6 +143,52 @@ export function isOffsetInsideCodeFence(text: string, offset: number): boolean {
   return last !== undefined && !last.closed;
 }
 
+/** An inline code pair in one line, as character indexes. */
+export interface InlineCodeRange {
+  /** Index of the opening backtick */
+  start: number;
+  /** Index of the closing backtick */
+  end: number;
+}
+
+/**
+ * Find the inline code pairs (`foo`) in one line.
+ *
+ * - Only a run of exactly 1 backtick is a tick. Runs of 2 or more (for
+ *   example ```) are plain text.
+ * - The ticks pair from left to right: `a` and `b` gives 2 pairs.
+ * - A pair shows as inline code only when the text between the ticks is
+ *   not empty and has no backtick and no atomic tag (file tag or quote chip).
+ *   Such a pair stays plain text, and the next tick starts a new pair.
+ */
+export function findInlineCodeRanges(line: string): InlineCodeRange[] {
+  if (!line.includes(BACKTICK)) return [];
+
+  const ticks: number[] = [];
+  let i = 0;
+  while (i < line.length) {
+    if (line[i] !== BACKTICK) {
+      i++;
+      continue;
+    }
+    let runEnd = i;
+    while (runEnd < line.length && line[runEnd] === BACKTICK) runEnd++;
+    if (runEnd - i === 1) ticks.push(i);
+    i = runEnd;
+  }
+
+  const ranges: InlineCodeRange[] = [];
+  for (let k = 0; k + 1 < ticks.length; k += 2) {
+    const start = ticks[k];
+    const end = ticks[k + 1];
+    const content = line.slice(start + 1, end);
+    if (content && !content.includes(BACKTICK) && !content.includes(ATOMIC_PLACEHOLDER)) {
+      ranges.push({ start, end });
+    }
+  }
+  return ranges;
+}
+
 /** The selection when its anchor is inside the element, else null. */
 export function getSelectionInside(editable: HTMLElement): Selection | null {
   const selection = window.getSelection();
@@ -151,12 +217,53 @@ function getAtomicTags(editable: HTMLElement): HTMLElement[] {
   );
 }
 
-/** Build the nodes of one line. An empty line gets a <br> placeholder. */
+/** Append text to the parent. Each placeholder gives the next atomic tag. */
+function appendTextWithTags(
+  parent: HTMLElement,
+  text: string,
+  atomicTags: readonly HTMLElement[],
+  nextTag: { index: number }
+): void {
+  const parts = text.split(ATOMIC_PLACEHOLDER);
+  parts.forEach((part, i) => {
+    if (i > 0) {
+      const tag = atomicTags[nextTag.index++];
+      if (tag) parent.appendChild(tag.cloneNode(true));
+    }
+    if (part) parent.appendChild(document.createTextNode(part));
+  });
+}
+
+/** Build a hidden backtick of an inline code span. */
+function createInlineCodeTick(): HTMLSpanElement {
+  const tick = document.createElement('span');
+  tick.className = INLINE_CODE_TICK_CLASS;
+  // The caret cannot go into the tick, and Backspace removes it as 1 unit
+  tick.setAttribute('contenteditable', 'false');
+  tick.textContent = BACKTICK;
+  return tick;
+}
+
+/** Build an inline code span: hidden tick, code text, hidden tick. */
+function createInlineCode(content: string): HTMLSpanElement {
+  const span = document.createElement('span');
+  span.className = INLINE_CODE_CLASS;
+  span.appendChild(createInlineCodeTick());
+  span.appendChild(document.createTextNode(content));
+  span.appendChild(createInlineCodeTick());
+  return span;
+}
+
+/**
+ * Build the nodes of one line. An empty line gets a <br> placeholder.
+ * The inline code ranges must not contain atomic placeholders.
+ */
 function buildLine(
   line: string,
   atomicTags: readonly HTMLElement[],
   nextTag: { index: number },
-  className: string | null
+  className: string | null,
+  inlineCode: readonly InlineCodeRange[] = []
 ): HTMLDivElement {
   const div = document.createElement('div');
   if (className) div.className = className;
@@ -166,14 +273,13 @@ function buildLine(
     return div;
   }
 
-  const parts = line.split(ATOMIC_PLACEHOLDER);
-  parts.forEach((part, i) => {
-    if (i > 0) {
-      const tag = atomicTags[nextTag.index++];
-      if (tag) div.appendChild(tag.cloneNode(true));
-    }
-    if (part) div.appendChild(document.createTextNode(part));
-  });
+  let position = 0;
+  for (const range of inlineCode) {
+    appendTextWithTags(div, line.slice(position, range.start), atomicTags, nextTag);
+    div.appendChild(createInlineCode(line.slice(range.start + 1, range.end)));
+    position = range.end + 1;
+  }
+  appendTextWithTags(div, line.slice(position), atomicTags, nextTag);
   return div;
 }
 
@@ -205,6 +311,7 @@ function createLanguageBadge(lang: string): HTMLSpanElement {
 function buildDecoratedContainer(
   lines: readonly string[],
   ranges: readonly CodeFenceRange[],
+  inlineCode: readonly (readonly InlineCodeRange[])[],
   atomicTags: readonly HTMLElement[]
 ): HTMLDivElement {
   const container = document.createElement('div');
@@ -237,9 +344,30 @@ function buildDecoratedContainer(
       rangeIndex++;
       continue;
     }
-    container.appendChild(buildLine(lines[i], atomicTags, nextTag, null));
+    container.appendChild(buildLine(lines[i], atomicTags, nextTag, null, inlineCode[i]));
   }
   return container;
+}
+
+/**
+ * The inline code ranges of each line. The lines in a fence get none.
+ */
+function findInlineCodeByLine(
+  lines: readonly string[],
+  ranges: readonly CodeFenceRange[]
+): InlineCodeRange[][] {
+  const result: InlineCodeRange[][] = lines.map(() => []);
+  let rangeIndex = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const range = ranges[rangeIndex];
+    if (range && i >= range.start) {
+      i = range.end;
+      rangeIndex++;
+      continue;
+    }
+    result[i] = findInlineCodeRanges(lines[i]);
+  }
+  return result;
 }
 
 /** True when both elements have the same child nodes. */
@@ -416,6 +544,57 @@ export function ensureCaretOutsideHiddenMarker(
   return 'moved';
 }
 
+/** The index of the node in its parent. */
+function childIndex(node: Node): number {
+  return node.parentNode ? Array.prototype.indexOf.call(node.parentNode.childNodes, node) : -1;
+}
+
+/**
+ * When the collapsed caret is in a hidden backtick of an inline code span,
+ * move it to the visible position at the same text offset:
+ *
+ * - Before the opening backtick: before the span.
+ * - After the opening backtick: the start of the code text.
+ * - Before the closing backtick: the end of the code text.
+ * - After the closing backtick: after the span.
+ *
+ * @returns true when the caret moved
+ */
+export function ensureCaretOutsideHiddenTick(editable: HTMLElement): boolean {
+  const selection = getSelectionInside(editable);
+  if (!selection || !selection.isCollapsed || !selection.anchorNode) return false;
+
+  const anchorElement = toElement(selection.anchorNode);
+  const tick = anchorElement?.closest(`.${INLINE_CODE_TICK_CLASS}`);
+  if (!tick || !editable.contains(tick)) return false;
+  const span = tick.parentElement;
+  if (!span || !span.classList.contains(INLINE_CODE_CLASS) || !span.parentNode) return false;
+
+  // The caret is before (false) or after (true) the backtick character
+  const afterTick =
+    selection.anchorNode === tick
+      ? selection.anchorOffset > 0
+      : selection.anchorOffset >= (selection.anchorNode.textContent?.length ?? 0);
+  const isOpening = tick === span.firstChild;
+  const parent = span.parentNode;
+  const spanIndex = childIndex(span);
+
+  if (isOpening && !afterTick) {
+    setCaret(parent, spanIndex);
+  } else if (!isOpening && afterTick) {
+    setCaret(parent, spanIndex + 1);
+  } else {
+    const code = isOpening ? tick.nextSibling : tick.previousSibling;
+    if (code && code.nodeType === Node.TEXT_NODE) {
+      setCaret(code, isOpening ? 0 : (code.textContent?.length ?? 0));
+    } else {
+      // Not a normal span (no code text): put the caret outside of it
+      setCaret(parent, isOpening ? spanIndex : spanIndex + 1);
+    }
+  }
+  return true;
+}
+
 export interface DecorateCodeFencesOptions {
   /**
    * Called when the decoration changes the text. This occurs only when it
@@ -432,25 +611,30 @@ export interface DecorateCodeFencesOptions {
 }
 
 /**
- * Show the code fences of the editable element as code blocks.
+ * Show the markdown code of the editable element: code fences as code
+ * blocks, and `inline code` on the other lines as inline code spans.
  *
- * - Does not touch the DOM when the text has no ``` and no fence blocks.
+ * - Does not touch the DOM when the text has no backtick and no decoration.
  * - Does not touch the DOM when the text is very large.
- * - Removes the fence blocks when the text has no fences any more.
+ * - Removes the decoration when the text has no code any more (for example
+ *   when the user deletes a backtick).
  * - Changes the DOM only when the structure changes (idempotent).
  * - Keeps the text: when the rebuilt DOM gives a different text, the DOM
  *   does not change.
  * - Keeps the caret at the same text offset. When that offset is in a hidden
- *   ``` line, moves the caret to a visible line.
+ *   ``` line, moves the caret to a visible line. When the caret is in a
+ *   hidden backtick of an inline code span, moves it to the visible position
+ *   at the same text offset (after the span for the closing backtick).
  *
  * @returns true when the DOM changed
  */
-export function decorateCodeFences(
+export function decorateInputMarkup(
   editable: HTMLElement,
   options: DecorateCodeFencesOptions = {}
 ): boolean {
-  const hasFenceBlocks = editable.querySelector(`.${CODE_FENCE_CLASS}`) !== null;
-  if (!hasFenceBlocks && !(editable.textContent ?? '').includes(FENCE_HINT)) {
+  const hasDecoration =
+    editable.querySelector(`.${CODE_FENCE_CLASS}, .${INLINE_CODE_CLASS}`) !== null;
+  if (!hasDecoration && !(editable.textContent ?? '').includes(BACKTICK)) {
     return false;
   }
 
@@ -468,9 +652,11 @@ export function decorateCodeFences(
 
   const lines = placeholderText.split('\n');
   const ranges = findCodeFenceRanges(lines);
-  if (ranges.length === 0 && !hasFenceBlocks) return false;
+  const inlineCode = findInlineCodeByLine(lines, ranges);
+  const hasInlineCode = inlineCode.some((line) => line.length > 0);
+  if (ranges.length === 0 && !hasInlineCode && !hasDecoration) return false;
 
-  const container = buildDecoratedContainer(lines, ranges, atomicTags);
+  const container = buildDecoratedContainer(lines, ranges, inlineCode, atomicTags);
   let changed = false;
   if (!haveSameChildren(container, editable)) {
     // The text must stay exactly the user's text
@@ -493,8 +679,15 @@ export function decorateCodeFences(
     options.onTextChange?.();
     return true;
   }
+  ensureCaretOutsideHiddenTick(editable);
   return changed;
 }
+
+/**
+ * The old name of decorateInputMarkup. It decorates the code fences and the
+ * inline code.
+ */
+export const decorateCodeFences = decorateInputMarkup;
 
 /**
  * Insert a line break at the caret, as Shift+Enter does.

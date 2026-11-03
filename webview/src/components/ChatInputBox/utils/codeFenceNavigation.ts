@@ -31,7 +31,7 @@ import {
   CODE_FENCE_MARKER_CLASS,
   blockHidesMarkers,
   createEmptyLine,
-  decorateCodeFences,
+  decorateInputMarkup,
   getFenceLines,
   getSelectionInside,
   getVisibleFenceLines,
@@ -341,7 +341,7 @@ export function applyCodeFenceKeyAction(
   if (textChanged) {
     // Rebuild the blocks for the new text (badge, hidden ``` lines). The
     // caret stays at the same text offset.
-    decorateCodeFences(editable, { allowNewLine: false });
+    decorateInputMarkup(editable, { allowNewLine: false });
   }
   scrollCaretLineIntoView(editable);
   return textChanged;
@@ -376,7 +376,7 @@ export function handleCodeFenceNavigationKey(
   if (event.key.startsWith('Arrow')) {
     const offsetBefore = getSelectionInside(editable) ? getVirtualCursorPosition(editable) : -1;
     let textChanged = false;
-    decorateCodeFences(editable, {
+    decorateInputMarkup(editable, {
       onTextChange: () => {
         textChanged = true;
       },
