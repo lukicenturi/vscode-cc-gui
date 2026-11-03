@@ -224,7 +224,7 @@ describe('MessageList context menu', () => {
     delete window.insertQuoteIntoChatInput;
   });
 
-  it('quotes the selection on Cmd/Ctrl+Shift+Q when the selection is in the list', () => {
+  it('quotes the selection on Cmd/Ctrl+Shift+J when the selection is in the list', () => {
     const insertQuote = vi.fn();
     window.insertQuoteIntoChatInput = insertQuote;
     const { container } = renderList(makeMessages(2));
@@ -235,7 +235,7 @@ describe('MessageList context menu', () => {
     sel.removeAllRanges();
     sel.addRange(range);
 
-    fireEvent.keyDown(document, { key: 'q', shiftKey: true, metaKey: true, ctrlKey: true });
+    fireEvent.keyDown(document, { key: 'j', shiftKey: true, metaKey: true, ctrlKey: true });
 
     expect(insertQuote).toHaveBeenCalledWith(item.textContent);
     sel.removeAllRanges();

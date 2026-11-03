@@ -9,11 +9,11 @@ import { useContextMenu, copySelection } from '../hooks/useContextMenu.js';
 import { formatQuote } from '../utils/quoteFormat';
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
-const QUOTE_SHORTCUT_LABEL = IS_MAC ? '⌘⇧Q' : 'Ctrl+Shift+Q';
+const QUOTE_SHORTCUT_LABEL = IS_MAC ? '⌘⇧J' : 'Ctrl+Shift+J';
 
 function isQuoteShortcut(e: KeyboardEvent): boolean {
   const mod = IS_MAC ? e.metaKey : e.ctrlKey;
-  return mod && e.shiftKey && !e.altKey && (e.key === 'q' || e.key === 'Q');
+  return mod && e.shiftKey && !e.altKey && (e.key === 'j' || e.key === 'J');
 }
 
 /** Put the selected text into the chat input as a quote chip. */
@@ -118,7 +118,7 @@ export const MessageList = memo(forwardRef<MessageListRevealHandle, MessageListP
     }
   }, [ctxMenu.open]);
 
-  // Quote shortcut: Cmd+Shift+Q (macOS) / Ctrl+Shift+Q when the selection
+  // Quote shortcut: Cmd+Shift+J (macOS) / Ctrl+Shift+J when the selection
   // lies inside the message list. Listen on the document because the
   // selection, not the focus, decides where the key applies.
   const listRef = useRef<HTMLDivElement>(null);
