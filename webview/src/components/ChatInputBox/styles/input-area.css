@@ -146,6 +146,7 @@
    ============================================================ */
 .input-code-fence {
   font-family: var(--cc-gui-code-font-family, monospace);
+  color: var(--color-code-inline-fg, #f2a76a);
   background: var(--color-code-block-bg, rgba(0, 0, 0, 0.25));
   border: 1px solid var(--color-code-block-border, transparent);
   border-radius: 6px;
@@ -154,8 +155,34 @@
   white-space: pre-wrap;
 }
 
+/* A ``` line shows only while the block has no content line */
 .input-code-fence-marker {
   opacity: 0.45;
+}
+
+/* The ``` lines stay in the DOM (the text keeps them), but do not show.
+   The keyboard handler and the decoration keep the caret out of them. */
+.input-code-fence-hide-markers > .input-code-fence-marker {
+  display: none;
+}
+
+/* Language badge of a closed fence (an empty element; the text comes from
+   data-lang, thus it gives no text to the input) */
+.input-code-fence-lang {
+  float: right;
+  margin: 1px 0 0 8px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--text-secondary, var(--input-placeholder));
+  background: rgba(127, 127, 127, 0.15);
+  user-select: none;
+  pointer-events: none;
+}
+
+.input-code-fence-lang::after {
+  content: attr(data-lang);
 }
 
 /* Code fence styles for light theme */

@@ -45,6 +45,8 @@ interface ExtractEditableTextOptions {
  * - A code fence block (div.input-code-fence) is a transparent container.
  *   Its line children are <div> elements, so the <div> rule gives a newline
  *   between them and the text is the same as the text that the user typed.
+ *   The hidden ``` lines give their text. The language badge
+ *   (span.input-code-fence-lang) gives no text.
  *
  * Performance: uses array + join instead of string concatenation (O(n) vs O(n^2)).
  */
@@ -79,6 +81,9 @@ export function extractEditableText(
           endsWithNewline = true;
         }
         node.childNodes.forEach(walk);
+      } else if (element.classList.contains('input-code-fence-lang')) {
+        // The language badge of a code fence block is decoration only.
+        // (Same value as CODE_FENCE_LANG_CLASS in utils/codeFenceDecoration.ts)
       } else if (element.classList.contains('file-tag')) {
         if (options.fileTagPlaceholder !== undefined) {
           textParts.push(options.fileTagPlaceholder);

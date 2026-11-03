@@ -192,7 +192,12 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
     const {
       decorateNow: decorateCodeFencesNow,
       scheduleDecoration: scheduleCodeFenceDecoration,
-    } = useCodeFenceDecoration({ editableRef, isComposingRef: sharedComposingRef });
+    } = useCodeFenceDecoration({
+      editableRef,
+      isComposingRef: sharedComposingRef,
+      // The decoration can add an empty line after a block for the caret
+      onTextChange: () => handleInputRef.current(),
+    });
 
     // renderFileTags rebuilds the input HTML, so decorate the code fences again after it
     const renderFileTags = useCallback(() => {

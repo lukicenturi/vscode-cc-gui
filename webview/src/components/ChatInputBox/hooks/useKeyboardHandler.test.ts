@@ -3,7 +3,11 @@ import type React from 'react';
 import { useKeyboardHandler } from './useKeyboardHandler.js';
 import type { UseKeyboardHandlerOptions } from './useKeyboardHandler.js';
 import { extractEditableText } from './useTextContent.js';
-import { setVirtualCursorPosition } from '../utils/virtualCursorUtils.js';
+import {
+  getVirtualCursorPosition,
+  setVirtualCursorPosition,
+} from '../utils/virtualCursorUtils.js';
+import { CODE_FENCE_CLASS, decorateCodeFences } from '../utils/codeFenceDecoration.js';
 
 function reactKeyEvent({
   key,
@@ -212,6 +216,107 @@ describe('useKeyboardHandler', () => {
       expect(handleSubmit).not.toHaveBeenCalled();
       expect(e.preventDefault).not.toHaveBeenCalled();
       expect(extractEditableText(editable)).toBe(text);
+    });
+  });
+  describe('keys at the edges of a code fence block', () => {
+    function setupFence(text: string, caretOffset: number) {
+      const editable = document.createElement('div');
+      editable.setAttribute('contenteditable', 'true');
+      editable.appendChild(document.createTextNode(text));
+      document.body.appendChild(editable);
+      decorateCodeFences(editable, { allowNewLine: false });
+      setVirtualCursorPosition(editable, caretOffset);
+      const onInput = vi.fn();
+      editable.addEventListener('input', onInput);
+      const handleSubmit = vi.fn();
+      const handleHistoryKeyDown = vi.fn(() => false);
+      const options: UseKeyboardHandlerOptions = {
+        isComposingRef: { current: false },
+        lastCompositionEndTimeRef: { current: Date.now() - 1000 },
+        sendShortcut: 'enter',
+        sdkStatusLoading: false,
+        sdkInstalled: true,
+        fileCompletion: { isOpen: false, handleKeyDown: vi.fn(() => false) },
+        commandCompletion: { isOpen: false, handleKeyDown: vi.fn(() => false) },
+        agentCompletion: { isOpen: false, handleKeyDown: vi.fn(() => false) },
+        promptCompletion: { isOpen: false, handleKeyDown: vi.fn(() => false) },
+        dollarCommandCompletion: { isOpen: false, handleKeyDown: vi.fn(() => false) },
+        handleMacCursorMovement: vi.fn(() => false),
+        handleHistoryKeyDown,
+        completionSelectedRef: { current: false },
+        submittedOnEnterRef: { current: false },
+        handleSubmit,
+        editableRef: { current: editable },
+      };
+      const { result } = renderHook(() => useKeyboardHandler(options));
+      return { editable, onInput, handleSubmit, handleHistoryKeyDown, result };
+    }
+
+    function caretInBlock(): boolean {
+      const node = window.getSelection()?.anchorNode ?? null;
+      const el = node?.nodeType === Node.ELEMENT_NODE ? (node as Element) : node?.parentElement;
+      return !!el?.closest(`.${CODE_FENCE_CLASS}`);
+    }
+
+    afterEach(() => {
+      document.body.innerHTML = '';
+      window.getSelection()?.removeAllRanges();
+    });
+
+    it('ArrowDown on the last line of a closed fence moves the caret after the block', () => {
+      const text = '```\ncode\n```\nafter';
+      const { editable, result } = setupFence(text, '```\ncode'.length);
+
+      const e = reactKeyEvent({ key: 'ArrowDown' });
+      result.current.onKeyDown(e);
+
+      expect(e.preventDefault).toHaveBeenCalled();
+      expect(caretInBlock()).toBe(false);
+      expect(getVirtualCursorPosition(editable)).toBe('```\ncode\n```\n'.length);
+      expect(extractEditableText(editable)).toBe(text);
+    });
+
+    it('ArrowDown on the last line of an unclosed fence adds the closing ``` and a new line', () => {
+      const text = '```ts\nconst a = 1;';
+      const { editable, onInput, result } = setupFence(text, text.length);
+
+      result.current.onKeyDown(reactKeyEvent({ key: 'ArrowDown' }));
+
+      expect(extractEditableText(editable)).toBe(`${text}\n\`\`\`\n`);
+      expect(caretInBlock()).toBe(false);
+      expect(onInput).toHaveBeenCalledTimes(1);
+    });
+
+    it('ArrowUp on the first line moves the caret before the block', () => {
+      const text = 'intro\n```\ncode\n```';
+      const { editable, result } = setupFence(text, 'intro\n```\nco'.length);
+
+      result.current.onKeyDown(reactKeyEvent({ key: 'ArrowUp' }));
+
+      expect(caretInBlock()).toBe(false);
+      expect(getVirtualCursorPosition(editable)).toBe('intro'.length);
+    });
+
+    it('Backspace on the empty only line of a fence removes the fence', () => {
+      const text = 'a\n```\n\n```\nb';
+      const { editable, onInput, result } = setupFence(text, 'a\n```\n'.length);
+
+      result.current.onKeyDown(reactKeyEvent({ key: 'Backspace' }));
+
+      expect(editable.querySelector(`.${CODE_FENCE_CLASS}`)).toBeNull();
+      expect(extractEditableText(editable)).toBe('a\n\nb');
+      expect(onInput).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets the input history take ArrowUp first', () => {
+      const text = '```\ncode\n```';
+      const { editable, handleHistoryKeyDown, result } = setupFence(text, '```\nco'.length);
+      handleHistoryKeyDown.mockReturnValue(true);
+
+      result.current.onKeyDown(reactKeyEvent({ key: 'ArrowUp' }));
+
+      expect(extractEditableText(editable)).toBe(text);
+      expect(caretInBlock()).toBe(true);
     });
   });
 });

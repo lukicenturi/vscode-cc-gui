@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, MutableRefObject } from 'react';
 import { handleEnterInCodeFence } from '../utils/codeFenceDecoration.js';
+import { handleCodeFenceNavigationKey } from '../utils/codeFenceNavigation.js';
 
 interface CompletionWithKeyDown {
   isOpen: boolean;
@@ -39,7 +40,9 @@ export interface UseKeyboardHandlerOptions {
   handleSubmit: () => void;
   /**
    * The chat input element. When set, Enter inside a ``` code fence inserts
-   * a newline instead of sending (Enter-to-send mode).
+   * a newline instead of sending (Enter-to-send mode), and the arrow keys,
+   * Backspace and Delete move the caret out of a code fence block (see
+   * utils/codeFenceNavigation.ts).
    */
   editableRef?: React.RefObject<HTMLDivElement | null>;
 }
@@ -52,6 +55,7 @@ export interface UseKeyboardHandlerOptions {
  * - History navigation (when input empty)
  * - Send shortcut (Enter / Cmd+Enter)
  * - Enter inside a ``` code fence inserts a newline (Cmd/Ctrl+Enter still sends)
+ * - Arrow keys, Backspace and Delete at the edges of a code fence block
  * - Preventing IME "confirm enter" false send
  */
 export function useKeyboardHandler({
@@ -150,6 +154,16 @@ export function useKeyboardHandler({
       }
 
       if (handleHistoryKeyDown(e)) return;
+
+      // Leave a code fence block with the arrow keys; keep the hidden ``` lines
+      if (
+        !isIMEComposing &&
+        editableRef &&
+        handleCodeFenceNavigationKey(e, editableRef.current)
+      ) {
+        e.stopPropagation();
+        return;
+      }
 
       const isRecentlyComposing = Date.now() - lastCompositionEndTimeRef.current < 100;
       const isSendKey =

@@ -23,6 +23,23 @@ function isBlockLine(el: HTMLElement): boolean {
 }
 
 /**
+ * The first child of the node when it is a line element (<div>/<p>), else
+ * null. Skips leading non-editable elements that give no text (for example
+ * the language badge of a code fence block).
+ */
+function getFirstLineChild(node: Node): HTMLElement | null {
+  for (const child of Array.from(node.childNodes)) {
+    if (child.nodeType !== Node.ELEMENT_NODE) return null;
+    const el = child as HTMLElement;
+    if (isBlockLine(el)) return el;
+    const isEmptyDecoration =
+      el.getAttribute('contenteditable') === 'false' && !el.textContent;
+    if (!isEmptyDecoration) return null;
+  }
+  return null;
+}
+
+/**
  * Helper: check if text ends with a newline
  */
 function textEndsWithNewline(text: string | null): boolean {
@@ -287,12 +304,10 @@ export function setVirtualCursorPosition(
       // Sentinel: place cursor at the start of this line element. Go into
       // nested line elements (a code fence block holds line <div>s).
       let lineNode: Node = node;
-      while (
-        lineNode.firstChild &&
-        lineNode.firstChild.nodeType === Node.ELEMENT_NODE &&
-        isBlockLine(lineNode.firstChild as HTMLElement)
-      ) {
-        lineNode = lineNode.firstChild;
+      let firstLine = getFirstLineChild(lineNode);
+      while (firstLine) {
+        lineNode = firstLine;
+        firstLine = getFirstLineChild(lineNode);
       }
       range.setStart(lineNode, 0);
       range.collapse(true);

@@ -11,7 +11,9 @@
  * DOM structure when the input has a fence:
  *
  *   <div>plain line</div>
- *   <div class="input-code-fence" data-fence="1">
+ *   <div class="input-code-fence input-code-fence-hide-markers" data-fence="1"
+ *        data-fence-closed="true">
+ *     <span class="input-code-fence-lang" contenteditable="false" data-lang="ts"></span>
  *     <div class="input-code-fence-line input-code-fence-marker">```ts</div>
  *     <div class="input-code-fence-line">const a = 1;</div>
  *     <div class="input-code-fence-line"><br></div>          (empty line)
@@ -21,6 +23,15 @@
  *
  * Each line is a <div>. The <div> rule of extractEditableText and of the
  * virtual cursor utilities gives the newline between the lines.
+ *
+ * When a block has 1 or more content lines, the CSS hides the ``` lines
+ * (class input-code-fence-hide-markers). The ``` lines stay in the DOM, thus
+ * the text does not change. The caret must not stay in a hidden ``` line:
+ * ensureCaretOutsideHiddenMarker moves it to a visible line.
+ *
+ * A closed fence with a language shows the language in a badge. The badge
+ * is an empty element. The CSS shows its data-lang value, thus the badge
+ * gives no text.
  */
 
 import { extractEditableText } from '../hooks/useTextContent.js';
@@ -34,6 +45,10 @@ import { TEXT_LENGTH_THRESHOLDS } from '../../../constants/performance.js';
 export const CODE_FENCE_CLASS = 'input-code-fence';
 export const CODE_FENCE_LINE_CLASS = 'input-code-fence-line';
 export const CODE_FENCE_MARKER_CLASS = 'input-code-fence-marker';
+/** A fence block that hides its ``` lines (it has 1 or more content lines) */
+export const CODE_FENCE_HIDE_MARKERS_CLASS = 'input-code-fence-hide-markers';
+/** The language badge of a closed fence (an empty, non-editable element) */
+export const CODE_FENCE_LANG_CLASS = 'input-code-fence-lang';
 
 /** Text that must occur in the input before the decoration parses it. */
 const FENCE_HINT = '```';
@@ -109,7 +124,7 @@ export function isOffsetInsideCodeFence(text: string, offset: number): boolean {
 }
 
 /** The selection when its anchor is inside the element, else null. */
-function getSelectionInside(editable: HTMLElement): Selection | null {
+export function getSelectionInside(editable: HTMLElement): Selection | null {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return null;
   const anchor = selection.anchorNode;
@@ -162,6 +177,30 @@ function buildLine(
   return div;
 }
 
+/**
+ * The language of an opening fence line: the first word of the text after
+ * the backticks. An empty string when the line has no language.
+ */
+export function getFenceLanguage(openingLine: string): string {
+  const match = OPEN_FENCE_RE.exec(openingLine);
+  if (!match) return '';
+  const info = match[2].split(ATOMIC_PLACEHOLDER).join('').trim();
+  return info.split(/\s+/)[0] ?? '';
+}
+
+/**
+ * Build the language badge. It has no child nodes: the CSS shows the
+ * data-lang value, thus the badge gives no text to extractEditableText and
+ * to the caret utilities.
+ */
+function createLanguageBadge(lang: string): HTMLSpanElement {
+  const badge = document.createElement('span');
+  badge.className = CODE_FENCE_LANG_CLASS;
+  badge.setAttribute('contenteditable', 'false');
+  badge.setAttribute('data-lang', lang);
+  return badge;
+}
+
 /** Build the decorated nodes for the lines in a detached container. */
 function buildDecoratedContainer(
   lines: readonly string[],
@@ -178,6 +217,14 @@ function buildDecoratedContainer(
       const block = document.createElement('div');
       block.className = CODE_FENCE_CLASS;
       block.setAttribute('data-fence', '1');
+      block.setAttribute('data-fence-closed', range.closed ? 'true' : 'false');
+      const lastContent = range.closed ? range.end - 1 : range.end;
+      const hasContent = lastContent > range.start;
+      if (hasContent) {
+        block.classList.add(CODE_FENCE_HIDE_MARKERS_CLASS);
+        const lang = range.closed ? getFenceLanguage(lines[range.start]) : '';
+        if (lang) block.appendChild(createLanguageBadge(lang));
+      }
       for (let j = range.start; j <= range.end; j++) {
         const isMarker = j === range.start || (range.closed && j === range.end);
         const className = isMarker
@@ -210,6 +257,180 @@ function countOccurrences(text: string, char: string): number {
   return count;
 }
 
+
+/* ------------------------------------------------------------------
+ * Lines, hidden ``` lines and caret placement
+ * ------------------------------------------------------------------ */
+
+/** True when the node is a code fence block. */
+export function isCodeFenceBlock(node: Node | null | undefined): node is HTMLElement {
+  return (
+    !!node &&
+    node.nodeType === Node.ELEMENT_NODE &&
+    (node as HTMLElement).classList.contains(CODE_FENCE_CLASS)
+  );
+}
+
+/** True when the fence block hides its ``` lines. */
+export function blockHidesMarkers(block: HTMLElement): boolean {
+  return block.classList.contains(CODE_FENCE_HIDE_MARKERS_CLASS);
+}
+
+/** True when the element is a ``` line that the CSS hides. */
+export function isHiddenMarkerLine(element: Element): boolean {
+  const block = element.parentElement;
+  return (
+    element.classList.contains(CODE_FENCE_MARKER_CLASS) &&
+    isCodeFenceBlock(block) &&
+    blockHidesMarkers(block)
+  );
+}
+
+/** The line <div> elements of a fence block (``` lines included). */
+export function getFenceLines(block: HTMLElement): HTMLElement[] {
+  return Array.from(block.children).filter((child): child is HTMLElement =>
+    child.classList.contains(CODE_FENCE_LINE_CLASS)
+  );
+}
+
+/** The visible line elements of a fence block. */
+export function getVisibleFenceLines(block: HTMLElement): HTMLElement[] {
+  return getFenceLines(block).filter((line) => !isHiddenMarkerLine(line));
+}
+
+/** True when the fence block has a closing ``` line. */
+export function isClosedFenceBlock(block: HTMLElement): boolean {
+  const closedAttr = block.getAttribute('data-fence-closed');
+  if (closedAttr !== null) return closedAttr === 'true';
+  const lines = getFenceLines(block);
+  return lines.length > 1 && lines[lines.length - 1].classList.contains(CODE_FENCE_MARKER_CLASS);
+}
+
+/** Put a collapsed caret at the DOM position. */
+export function setCaret(node: Node, offset: number): void {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.setStart(node, offset);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+/**
+ * Put the caret at the start of a line. For a fence block, the line is the
+ * first visible line of the block.
+ */
+export function placeCaretAtLineStart(line: Node): void {
+  let target: Node = line;
+  if (isCodeFenceBlock(line)) {
+    const first = getVisibleFenceLines(line)[0];
+    if (first) target = first;
+  }
+  setCaret(target, 0);
+}
+
+/**
+ * Put the caret at the end of a line. For a fence block, the line is the
+ * last visible line of the block.
+ */
+export function placeCaretAtLineEnd(line: Node): void {
+  let target: Node = line;
+  if (isCodeFenceBlock(line)) {
+    const lines = getVisibleFenceLines(line);
+    const last = lines[lines.length - 1];
+    if (last) target = last;
+  }
+  if (target.nodeType === Node.TEXT_NODE) {
+    setCaret(target, target.textContent?.length ?? 0);
+    return;
+  }
+  const last = target.lastChild;
+  if (!last) {
+    setCaret(target, 0);
+  } else if (last.nodeType === Node.TEXT_NODE) {
+    setCaret(last, last.textContent?.length ?? 0);
+  } else if ((last as HTMLElement).tagName?.toLowerCase() === 'br') {
+    // The <br> placeholder of the line: put the caret before it
+    setCaret(target, target.childNodes.length - 1);
+  } else {
+    setCaret(target, target.childNodes.length);
+  }
+}
+
+/** Make an empty line: <div><br></div>. */
+export function createEmptyLine(): HTMLDivElement {
+  const div = document.createElement('div');
+  div.appendChild(document.createElement('br'));
+  return div;
+}
+
+/** The element that holds the node, or the node when it is an element. */
+function toElement(node: Node): Element | null {
+  return node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+}
+
+export type CaretSnapResult = 'none' | 'moved' | 'text-changed';
+
+/**
+ * When the collapsed caret is in a hidden ``` line, move it to a visible line.
+ *
+ * - In the opening ``` line: to the start of the first content line.
+ * - In the closing ``` line: to the start of the line after the block. When
+ *   no line follows the block and allowNewLine is true, add an empty line
+ *   after the block (the text gets a newline). Else, to the end of the last
+ *   content line.
+ *
+ * @returns 'text-changed' when a new line was added
+ */
+export function ensureCaretOutsideHiddenMarker(
+  editable: HTMLElement,
+  allowNewLine: boolean
+): CaretSnapResult {
+  const selection = getSelectionInside(editable);
+  if (!selection || !selection.isCollapsed || !selection.anchorNode) return 'none';
+
+  const anchorElement = toElement(selection.anchorNode);
+  const marker = anchorElement?.closest(`.${CODE_FENCE_MARKER_CLASS}`);
+  if (!marker || !editable.contains(marker) || !isHiddenMarkerLine(marker)) return 'none';
+
+  const block = marker.parentElement as HTMLElement;
+  const lines = getFenceLines(block);
+  if (marker === lines[0]) {
+    placeCaretAtLineStart(block);
+    return 'moved';
+  }
+
+  const next = block.nextSibling;
+  if (next) {
+    placeCaretAtLineStart(next);
+    return 'moved';
+  }
+  if (allowNewLine) {
+    const line = createEmptyLine();
+    block.after(line);
+    setCaret(line, 0);
+    return 'text-changed';
+  }
+  placeCaretAtLineEnd(block);
+  return 'moved';
+}
+
+export interface DecorateCodeFencesOptions {
+  /**
+   * Called when the decoration changes the text. This occurs only when it
+   * adds an empty line after a block to move the caret out of a hidden
+   * closing ``` line.
+   */
+  onTextChange?: () => void;
+  /**
+   * Allow an empty line after a block for the caret (see
+   * ensureCaretOutsideHiddenMarker). Default: true when the editable element
+   * has the focus.
+   */
+  allowNewLine?: boolean;
+}
+
 /**
  * Show the code fences of the editable element as code blocks.
  *
@@ -219,11 +440,15 @@ function countOccurrences(text: string, char: string): number {
  * - Changes the DOM only when the structure changes (idempotent).
  * - Keeps the text: when the rebuilt DOM gives a different text, the DOM
  *   does not change.
- * - Keeps the caret at the same text offset.
+ * - Keeps the caret at the same text offset. When that offset is in a hidden
+ *   ``` line, moves the caret to a visible line.
  *
  * @returns true when the DOM changed
  */
-export function decorateCodeFences(editable: HTMLElement): boolean {
+export function decorateCodeFences(
+  editable: HTMLElement,
+  options: DecorateCodeFencesOptions = {}
+): boolean {
   const hasFenceBlocks = editable.querySelector(`.${CODE_FENCE_CLASS}`) !== null;
   if (!hasFenceBlocks && !(editable.textContent ?? '').includes(FENCE_HINT)) {
     return false;
@@ -246,21 +471,29 @@ export function decorateCodeFences(editable: HTMLElement): boolean {
   if (ranges.length === 0 && !hasFenceBlocks) return false;
 
   const container = buildDecoratedContainer(lines, ranges, atomicTags);
-  if (haveSameChildren(container, editable)) return false;
+  let changed = false;
+  if (!haveSameChildren(container, editable)) {
+    // The text must stay exactly the user's text
+    const text = extractEditableText(editable);
+    if (extractEditableText(container) !== text) return false;
 
-  // The text must stay exactly the user's text
-  const text = extractEditableText(editable);
-  if (extractEditableText(container) !== text) return false;
+    const hasCaret = getSelectionInside(editable) !== null;
+    const caretOffset = hasCaret ? getVirtualCursorPosition(editable) : 0;
 
-  const hasCaret = getSelectionInside(editable) !== null;
-  const caretOffset = hasCaret ? getVirtualCursorPosition(editable) : 0;
+    editable.replaceChildren(...Array.from(container.childNodes));
 
-  editable.replaceChildren(...Array.from(container.childNodes));
-
-  if (hasCaret) {
-    setVirtualCursorPosition(editable, caretOffset);
+    if (hasCaret) {
+      setVirtualCursorPosition(editable, caretOffset);
+    }
+    changed = true;
   }
-  return true;
+
+  const allowNewLine = options.allowNewLine ?? document.activeElement === editable;
+  if (ensureCaretOutsideHiddenMarker(editable, allowNewLine) === 'text-changed') {
+    options.onTextChange?.();
+    return true;
+  }
+  return changed;
 }
 
 /**

@@ -1,8 +1,12 @@
 import {
   CODE_FENCE_CLASS,
+  CODE_FENCE_HIDE_MARKERS_CLASS,
+  CODE_FENCE_LANG_CLASS,
+  CODE_FENCE_LINE_CLASS,
   CODE_FENCE_MARKER_CLASS,
   decorateCodeFences,
   findCodeFenceRanges,
+  getFenceLanguage,
   handleEnterInCodeFence,
   isOffsetInsideCodeFence,
 } from './codeFenceDecoration.js';
@@ -24,6 +28,17 @@ function makeEditable(text: string): HTMLDivElement {
 
 function fenceBlocks(editable: HTMLElement): HTMLElement[] {
   return Array.from(editable.querySelectorAll<HTMLElement>(`.${CODE_FENCE_CLASS}`));
+}
+
+function fenceLines(block: HTMLElement): HTMLElement[] {
+  return Array.from(block.querySelectorAll<HTMLElement>(`:scope > .${CODE_FENCE_LINE_CLASS}`));
+}
+
+/** The line element that holds the caret, or null. */
+function caretElement(): Element | null {
+  const node = window.getSelection()?.anchorNode ?? null;
+  if (!node) return null;
+  return node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
 }
 
 afterEach(() => {
@@ -96,7 +111,7 @@ describe('decorateCodeFences', () => {
     const blocks = fenceBlocks(editable);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].getAttribute('data-fence')).toBe('1');
-    const lines = Array.from(blocks[0].children) as HTMLElement[];
+    const lines = fenceLines(blocks[0]);
     expect(lines.map((line) => line.textContent)).toEqual([
       '```ts',
       'const a = 1;',
@@ -122,7 +137,7 @@ describe('decorateCodeFences', () => {
 
     const blocks = fenceBlocks(editable);
     expect(blocks).toHaveLength(1);
-    const lines = Array.from(blocks[0].children) as HTMLElement[];
+    const lines = fenceLines(blocks[0]);
     expect(lines).toHaveLength(4);
     expect(lines[0].classList.contains(CODE_FENCE_MARKER_CLASS)).toBe(true);
     expect(lines[3].classList.contains(CODE_FENCE_MARKER_CLASS)).toBe(false);
@@ -264,5 +279,167 @@ describe('handleEnterInCodeFence', () => {
     expect(handleEnterInCodeFence(enterEvent({ metaKey: true }), editable)).toBe(false);
     expect(handleEnterInCodeFence(enterEvent({ ctrlKey: true }), editable)).toBe(false);
     expect(extractEditableText(editable)).toBe('```\nx');
+  });
+});
+
+describe('getFenceLanguage', () => {
+  it('gives the first word after the backticks', () => {
+    expect(getFenceLanguage('```ts')).toBe('ts');
+    expect(getFenceLanguage('```  python title="a.py"')).toBe('python');
+    expect(getFenceLanguage('```')).toBe('');
+    expect(getFenceLanguage('text')).toBe('');
+  });
+});
+
+describe('hidden ``` lines and language badge', () => {
+  it('hides the markers and shows a badge for a closed fence with a language', () => {
+    const text = 'intro\n```ts\nconst a = 1;\n```\nafter';
+    const editable = makeEditable(text);
+
+    decorateCodeFences(editable);
+
+    const block = fenceBlocks(editable)[0];
+    expect(block.classList.contains(CODE_FENCE_HIDE_MARKERS_CLASS)).toBe(true);
+    expect(block.getAttribute('data-fence-closed')).toBe('true');
+    // The markers stay in the DOM
+    expect(block.querySelectorAll(`.${CODE_FENCE_MARKER_CLASS}`)).toHaveLength(2);
+    const badge = block.querySelector<HTMLElement>(`.${CODE_FENCE_LANG_CLASS}`);
+    expect(badge).not.toBeNull();
+    expect(badge!.getAttribute('contenteditable')).toBe('false');
+    expect(badge!.getAttribute('data-lang')).toBe('ts');
+    expect(badge!.textContent).toBe('');
+    // The text does not change
+    expect(extractEditableText(editable)).toBe(text);
+  });
+
+  it('shows no badge for a closed fence without a language', () => {
+    const editable = makeEditable('```\nx\n```');
+    decorateCodeFences(editable);
+    const block = fenceBlocks(editable)[0];
+    expect(block.classList.contains(CODE_FENCE_HIDE_MARKERS_CLASS)).toBe(true);
+    expect(block.querySelector(`.${CODE_FENCE_LANG_CLASS}`)).toBeNull();
+  });
+
+  it('hides the opening marker of an unclosed fence but shows no badge', () => {
+    const text = '```ts\nconst a';
+    const editable = makeEditable(text);
+    decorateCodeFences(editable);
+    const block = fenceBlocks(editable)[0];
+    expect(block.classList.contains(CODE_FENCE_HIDE_MARKERS_CLASS)).toBe(true);
+    expect(block.getAttribute('data-fence-closed')).toBe('false');
+    expect(block.querySelector(`.${CODE_FENCE_LANG_CLASS}`)).toBeNull();
+    expect(extractEditableText(editable)).toBe(text);
+  });
+
+  it('shows the markers while the fence has no content line', () => {
+    for (const text of ['```ts', '```\n```']) {
+      const editable = makeEditable(text);
+      decorateCodeFences(editable);
+      const block = fenceBlocks(editable)[0];
+      expect(block.classList.contains(CODE_FENCE_HIDE_MARKERS_CLASS)).toBe(false);
+      expect(block.querySelector(`.${CODE_FENCE_LANG_CLASS}`)).toBeNull();
+      expect(extractEditableText(editable)).toBe(text);
+      editable.remove();
+    }
+  });
+
+  it('extractEditableText ignores the badge, also when it has text', () => {
+    const text = '```js\nx\n```';
+    const editable = makeEditable(text);
+    decorateCodeFences(editable);
+    editable.querySelector(`.${CODE_FENCE_LANG_CLASS}`)!.textContent = 'js';
+    expect(extractEditableText(editable)).toBe(text);
+  });
+
+  it('is idempotent with a badge', () => {
+    const editable = makeEditable('a\n```ts\nb\n```\nc');
+    expect(decorateCodeFences(editable)).toBe(true);
+    const html = editable.innerHTML;
+    expect(decorateCodeFences(editable)).toBe(false);
+    expect(editable.innerHTML).toBe(html);
+  });
+
+  it('keeps the caret at the start of a block that is not the first line', () => {
+    const text = 'a\n```ts\nb\n```';
+    const editable = makeEditable(text);
+    decorateCodeFences(editable);
+    // The start of the first content line
+    setVirtualCursorPosition(editable, 'a\n```ts\n'.length);
+    expect(getVirtualCursorPosition(editable)).toBe('a\n```ts\n'.length);
+    expect(caretElement()?.closest(`.${CODE_FENCE_MARKER_CLASS}`)).toBeNull();
+  });
+});
+
+describe('caret is never in a hidden marker after decoration', () => {
+  it('moves the caret from the opening marker to the first content line', () => {
+    const text = 'a\n```ts\nb';
+    const editable = makeEditable(text);
+    setVirtualCursorPosition(editable, 'a\n```ts'.length);
+
+    decorateCodeFences(editable);
+
+    expect(caretElement()?.closest(`.${CODE_FENCE_MARKER_CLASS}`)).toBeNull();
+    expect(getVirtualCursorPosition(editable)).toBe('a\n```ts\n'.length);
+    expect(extractEditableText(editable)).toBe(text);
+  });
+
+  it('moves the caret from the closing marker to the line after the block', () => {
+    const text = '```\nx\n```\nafter';
+    const editable = makeEditable(text);
+    setVirtualCursorPosition(editable, '```\nx\n```'.length);
+
+    decorateCodeFences(editable);
+
+    expect(caretElement()?.closest(`.${CODE_FENCE_MARKER_CLASS}`)).toBeNull();
+    expect(getVirtualCursorPosition(editable)).toBe('```\nx\n```\n'.length);
+    expect(extractEditableText(editable)).toBe(text);
+  });
+
+  it('adds an empty line after the block when no line follows (focused input)', () => {
+    const text = 'see:\n```\nx\n```';
+    const editable = makeEditable(text);
+    setVirtualCursorPosition(editable, text.length);
+    const onTextChange = vi.fn();
+
+    expect(decorateCodeFences(editable, { allowNewLine: true, onTextChange })).toBe(true);
+
+    expect(onTextChange).toHaveBeenCalledTimes(1);
+    expect(caretElement()?.closest(`.${CODE_FENCE_MARKER_CLASS}`)).toBeNull();
+    expect(caretElement()?.closest(`.${CODE_FENCE_CLASS}`)).toBeNull();
+    expect(extractEditableText(editable)).toBe(`${text}\n`);
+    expect(getVirtualCursorPosition(editable)).toBe(text.length + 1);
+    // A second decoration does not change the DOM
+    expect(decorateCodeFences(editable, { allowNewLine: true, onTextChange })).toBe(false);
+    expect(onTextChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the text and moves the caret to the last content line when a new line is not allowed', () => {
+    const text = '```\nx\n```';
+    const editable = makeEditable(text);
+    setVirtualCursorPosition(editable, text.length);
+    const onTextChange = vi.fn();
+
+    decorateCodeFences(editable, { allowNewLine: false, onTextChange });
+
+    expect(onTextChange).not.toHaveBeenCalled();
+    expect(extractEditableText(editable)).toBe(text);
+    expect(caretElement()?.closest(`.${CODE_FENCE_MARKER_CLASS}`)).toBeNull();
+    expect(getVirtualCursorPosition(editable)).toBe('```\nx'.length);
+  });
+
+  it('moves the caret out of a marker also when the DOM does not change', () => {
+    const editable = makeEditable('```\nx\n```\ny');
+    decorateCodeFences(editable);
+    const opening = editable.querySelector(`.${CODE_FENCE_MARKER_CLASS}`)!;
+    const selection = window.getSelection()!;
+    const range = document.createRange();
+    range.setStart(opening.firstChild!, 1);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    expect(decorateCodeFences(editable)).toBe(false);
+    expect(caretElement()?.closest(`.${CODE_FENCE_MARKER_CLASS}`)).toBeNull();
+    expect(getVirtualCursorPosition(editable)).toBe('```\n'.length);
   });
 });
