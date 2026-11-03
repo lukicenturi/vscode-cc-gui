@@ -1,4 +1,5 @@
 import type * as vscode from 'vscode';
+import { FileLogSink } from './debugLogFileSink.ts';
 
 /**
  * Gate debug writes without monkey-patching OutputChannel methods.
@@ -17,6 +18,13 @@ export interface DebugGatedOutput {
 }
 
 export type CreateOutputChannel = (name: string) => vscode.OutputChannel;
+
+/** Optional file copy of the channel. See FileLogSink for the format. */
+export interface DebugLogFileSinkOptions {
+  filePath: string;
+  /** Rotate to `<filePath>.1` when the file is larger than this. Default 20 MB. */
+  maxBytes?: number;
+}
 
 /**
  * Bind append* once. Never delete channel methods — on VS Code they are often
@@ -42,11 +50,16 @@ export function captureAppendWriters(channel: vscode.OutputChannel): {
  * Create a fresh named channel and a flag-gated facade for append*.
  * Disposes any prior same-name channel so a previously monkey-patched instance
  * is not reused (safe heal without deleting methods on a live channel).
+ *
+ * When `fileSink` is given, each write that goes to the channel (gated writes
+ * when enabled, force writes always) is also appended to that file with an
+ * ISO timestamp prefix. File errors are dropped silently.
  */
 export function createDebugGatedOutputChannel(
   name: string,
   isEnabled: () => boolean,
   createOutputChannel: CreateOutputChannel,
+  fileSink?: DebugLogFileSinkOptions,
 ): DebugGatedOutput {
   try {
     createOutputChannel(name).dispose();
@@ -55,7 +68,27 @@ export function createDebugGatedOutputChannel(
   }
 
   const raw = createOutputChannel(name);
-  const { forceAppendLine, forceAppend } = captureAppendWriters(raw);
+  const writers = captureAppendWriters(raw);
+  let sink: FileLogSink | undefined;
+  if (fileSink?.filePath) {
+    try {
+      sink = new FileLogSink({ filePath: fileSink.filePath, maxBytes: fileSink.maxBytes });
+    } catch {
+      sink = undefined;
+    }
+  }
+  const forceAppendLine = sink
+    ? (value: string) => {
+        writers.forceAppendLine(value);
+        sink!.write(value);
+      }
+    : writers.forceAppendLine;
+  const forceAppend = sink
+    ? (value: string) => {
+        writers.forceAppend(value);
+        sink!.append(value);
+      }
+    : writers.forceAppend;
 
   const log: vscode.OutputChannel = {
     get name() {

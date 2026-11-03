@@ -122,10 +122,12 @@ export class BridgeServer {
     // no-op: VS Code reuses named channels across reloads, so a previous no-op
     // patch could be captured as the "real" writer and silence logs forever
     // until the switch was toggled after a full channel recreate.
+    const debugLogFilePath = BridgeServer._resolveDebugLogFilePath(context);
     const gated = createDebugGatedOutputChannel(
       'CC GUI',
       () => this._debugLogEnabled,
       (name) => vscode.window.createOutputChannel(name),
+      debugLogFilePath ? { filePath: debugLogFilePath } : undefined,
     );
     this._rawLog = gated.raw;
     this._log = gated.log;
@@ -134,6 +136,9 @@ export class BridgeServer {
     // Keep the channel alive with the extension host (and avoid accidental GC/dispose races).
     context.subscriptions.push(this._rawLog);
     this._applyDebugLogSetting(false);
+    if (debugLogFilePath) {
+      this._forceLog(`[BRIDGE] debug log file: ${debugLogFilePath}`);
+    }
     this._configListener = vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('ccGui.enableDebugLog')) {
         this._applyDebugLogSetting(true);
@@ -878,6 +883,16 @@ export class BridgeServer {
    *  can patch tool_use / tool_result blocks that may have been missed during streaming. */
   private _turnMessageBuffer = new Map<string, any[]>();
 
+  /** File copy of the CC GUI channel, or undefined when no global storage folder is available. */
+  private static _resolveDebugLogFilePath(context: vscode.ExtensionContext): string | undefined {
+    try {
+      const dir = context?.globalStorageUri?.fsPath;
+      return dir ? path.join(dir, 'ccgui-debug.log') : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   /**
    * Always write to the CC GUI Output channel, even when enableDebugLog is off.
    * Used for user-facing failures so diagnostics are never silently dropped.
@@ -1365,7 +1380,7 @@ export class BridgeServer {
           parsed = JSON.parse(line);
           // Keep heartbeat alive, but avoid flooding output channel with repetitive noise.
           if (parsed?.type !== 'heartbeat') {
-            this._log.appendLine(`[D] ${line.slice(0, 400)}`);
+            this._log.appendLine(`[D] ${line.slice(0, 1200)}`);
           }
           this._handleDaemonLine(parsed);
         } catch { /* ignore malformed */ }

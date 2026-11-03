@@ -21,7 +21,7 @@
   "ccGui.configuration.title": "CC GUI",
   "ccGui.configuration.nodePath.description": "Node.js executable used only by CC GUI (requires v20+). Does not change your project terminal Node. Leave empty to use auto-detected node on PATH.",
   "ccGui.configuration.autoSyncActiveFile.description": "Automatically sync active editor file context to CC GUI",
-  "ccGui.configuration.enableDebugLog.description": "Enable CC GUI debug logging. Logs appear in View → Output → CC GUI. Also available under CC GUI Settings → Basic → Behavior. Off by default.",
+  "ccGui.configuration.enableDebugLog.description": "Enable CC GUI debug logging. Logs appear in View → Output → CC GUI. Also available under CC GUI Settings → Basic → Behavior. The log is also written to the file ccgui-debug.log in the extension's global storage folder. Off by default.",
   "ccGui.configuration.remoteControl.claudePath.description": "Claude Code CLI executable that “Start Remote Control (Phone)” runs. Use a full path if `claude` is not on the PATH of the terminal.",
   "ccGui.configuration.remoteControl.keepAwake.description": "On macOS, run the Remote Control session inside `caffeinate -i` so that the Mac does not sleep while the session runs. Ignored on other platforms.",
   "ccGui.configuration.remoteControl.extraArgs.description": "More arguments that are added to the end of the Remote Control command without change, for example `--permission-mode acceptEdits`."

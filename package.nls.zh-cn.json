@@ -21,7 +21,7 @@
   "ccGui.configuration.title": "CC GUI",
   "ccGui.configuration.nodePath.description": "仅供 CC GUI 使用的 Node.js 可执行文件（需 v20+）。不会改动项目终端的 Node。留空则使用 PATH 上自动检测到的 node。",
   "ccGui.configuration.autoSyncActiveFile.description": "自动将当前编辑器文件上下文同步到 CC GUI",
-  "ccGui.configuration.enableDebugLog.description": "启用 CC GUI 调试日志。日志在「查看 → 输出 → CC GUI」中显示，也可在 CC GUI 设置 → 基础 → 行为中开关。默认关闭。",
+  "ccGui.configuration.enableDebugLog.description": "启用 CC GUI 调试日志。日志在「查看 → 输出 → CC GUI」中显示，也可在 CC GUI 设置 → 基础 → 行为中开关。日志同时写入扩展全局存储目录中的文件 ccgui-debug.log。默认关闭。",
   "ccGui.configuration.remoteControl.claudePath.description": "“启动远程控制（手机）”运行的 Claude Code CLI 可执行文件。如果终端的 PATH 中没有 `claude`，请填写完整路径。",
   "ccGui.configuration.remoteControl.keepAwake.description": "在 macOS 上用 `caffeinate -i` 运行远程控制会话，防止会话运行期间 Mac 进入睡眠。其他平台忽略此项。",
   "ccGui.configuration.remoteControl.extraArgs.description": "原样追加到远程控制命令末尾的额外参数，例如 `--permission-mode acceptEdits`。"
