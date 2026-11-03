@@ -208,6 +208,8 @@
         "hint": "这里修改的是插件界面字体。代码可以使用单独的代码字体。",
         "followOption": "跟随 IDEA UI 字体（{{font}}）",
         "customOption": "自定义 UI 字体文件",
+        "presetClaudeSans": "Claude 应用 (Anthropic Sans)",
+        "presetClaudeSerif": "Claude 应用 (Anthropic Serif)",
         "customPathLabel": "UI 字体文件路径",
         "customPathPlaceholder": "选择或输入 .ttf / .otf UI 字体文件路径",
         "browse": "浏览",

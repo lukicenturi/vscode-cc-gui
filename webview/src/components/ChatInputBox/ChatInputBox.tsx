@@ -31,6 +31,7 @@ import {
   useSubmitHandler,
   useKeyboardHandler,
   useNativeEventCapture,
+  useCodeFenceDecoration,
   useControlledValueSync,
   useChatInputAttachmentsCoordinator,
   useChatInputCompletionsCoordinator,
@@ -175,11 +176,29 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
     }, []);
 
     // File tags hook
-    const { renderFileTags, pathMappingRef, justRenderedTagRef, extractFileTags, setCursorAfterPath } = useFileTags({
+    const {
+      renderFileTags: renderFileTagsOnly,
+      pathMappingRef,
+      justRenderedTagRef,
+      extractFileTags,
+      setCursorAfterPath,
+    } = useFileTags({
       editableRef,
       getTextContent,
       onCloseCompletions: closeAllCompletions,
     });
+
+    // Code fence decoration: show ``` fenced regions as code blocks
+    const {
+      decorateNow: decorateCodeFencesNow,
+      scheduleDecoration: scheduleCodeFenceDecoration,
+    } = useCodeFenceDecoration({ editableRef, isComposingRef: sharedComposingRef });
+
+    // renderFileTags rebuilds the input HTML, so decorate the code fences again after it
+    const renderFileTags = useCallback(() => {
+      renderFileTagsOnly();
+      decorateCodeFencesNow();
+    }, [renderFileTagsOnly, decorateCodeFencesNow]);
 
     // Tooltip hook
     const { tooltip, handleMouseOver, handleMouseLeave } = useTooltip({
@@ -325,6 +344,9 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
         // If determined empty (only zero-width characters), pass empty string to parent
         debouncedOnInput(isEmpty ? '' : text);
 
+        // Show ``` fenced regions as code blocks (the text does not change)
+        if (!isEmpty) scheduleCodeFenceDecoration();
+
         timer.end();
       },
       [
@@ -334,6 +356,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
         debouncedOnInput,
         invalidateCache,
         syncInlineCompletion,
+        scheduleCodeFenceDecoration,
       ]
     );
 
@@ -482,6 +505,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       completionSelectedRef,
       submittedOnEnterRef,
       handleSubmit,
+      editableRef,
     });
 
     useControlledValueSync({
@@ -493,6 +517,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       setHasContent,
       adjustHeight,
       invalidateCache,
+      onSynced: decorateCodeFencesNow,
     });
 
     useNativeEventCapture({

@@ -28,6 +28,7 @@ export {
 export { useSubmitHandler } from './useSubmitHandler.js';
 export { useKeyboardHandler } from './useKeyboardHandler.js';
 export { useNativeEventCapture } from './useNativeEventCapture.js';
+export { useCodeFenceDecoration } from './useCodeFenceDecoration.js';
 export { useControlledValueSync } from './useControlledValueSync.js';
 export { useAttachmentHandlers } from './useAttachmentHandlers.js';
 export { useAttachmentPersistence, ATTACHMENTS_DRAFT_KEY } from './useAttachmentPersistence.js';

@@ -193,6 +193,8 @@
         "hint": "Aqui você altera a fonte da interface do plugin; o código pode usar uma fonte separada.",
         "followOption": "Seguir a fonte UI do IDEA ({{font}})",
         "customOption": "Arquivo de fonte da UI personalizado",
+        "presetClaudeSans": "App do Claude (Anthropic Sans)",
+        "presetClaudeSerif": "App do Claude (Anthropic Serif)",
         "customPathLabel": "Caminho do arquivo de fonte da UI",
         "customPathPlaceholder": "Escolha ou digite o caminho de um arquivo .ttf / .otf para a fonte da UI",
         "browse": "Procurar",

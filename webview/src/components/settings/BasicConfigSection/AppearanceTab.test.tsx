@@ -211,4 +211,74 @@ describe('AppearanceTab ui font selector', () => {
     expect(onUiFontSelectionChange).toHaveBeenCalledTimes(1);
     expect(onUiFontSelectionChange).toHaveBeenCalledWith('customFile');
   });
+
+  describe('Claude app font presets', () => {
+    const sansPath = '/Applications/Claude.app/Contents/Resources/fonts/AnthropicSans-Romans-Variable-25x258.ttf';
+    const renderWithUiFont = (uiFontConfig: Record<string, unknown>, onUiFontSelectionChange = vi.fn()) => render(
+      <AppearanceTab
+        {...({
+          theme: 'dark',
+          onThemeChange: vi.fn(),
+          fontSizeLevel: 3,
+          onFontSizeLevelChange: vi.fn(),
+          editorFontConfig: { fontFamily: 'Monaco', fontSize: 14, lineSpacing: 1.35 },
+          uiFontConfig: {
+            fontFamily: 'Monaco',
+            fontSize: 14,
+            lineSpacing: 1.35,
+            ...uiFontConfig,
+          },
+          codeFontConfig: {
+            mode: 'followEditor',
+            effectiveMode: 'followEditor',
+            fontFamily: 'Monaco',
+            fontSize: 14,
+            lineSpacing: 1.35,
+          },
+          onUiFontSelectionChange,
+          onSaveUiFontCustomPath: vi.fn(),
+          onBrowseUiFontFile: vi.fn(),
+          onCodeFontSelectionChange: vi.fn(),
+          onSaveCodeFontCustomPath: vi.fn(),
+          onBrowseCodeFontFile: vi.fn(),
+        } as any)}
+      />
+    );
+
+    it('shows a preset option only for the fonts that the host reports', () => {
+      renderWithUiFont({
+        mode: 'followEditor',
+        effectiveMode: 'followEditor',
+        presets: [{ id: 'claudeSans', label: 'Claude app (Anthropic Sans)', path: sansPath }],
+      });
+
+      const select = screen.getByRole('combobox', { name: /settings.basic.editorFont.label/i });
+      const options = within(select).getAllByRole('option');
+      expect(options).toHaveLength(3);
+      expect(screen.getByRole('option', { name: 'settings.basic.editorFont.presetClaudeSans' })).toBeTruthy();
+      expect(screen.queryByRole('option', { name: 'settings.basic.editorFont.presetClaudeSerif' })).toBeNull();
+    });
+
+    it('sends the preset selection and shows the active preset as selected', () => {
+      const onUiFontSelectionChange = vi.fn();
+      renderWithUiFont({
+        mode: 'customFile',
+        effectiveMode: 'customFile',
+        customFontPath: sansPath,
+        presets: [{ id: 'claudeSans', label: 'Claude app (Anthropic Sans)', path: sansPath }],
+      }, onUiFontSelectionChange);
+
+      const select = screen.getByRole('combobox', {
+        name: /settings.basic.editorFont.label/i,
+      }) as HTMLSelectElement;
+      expect(select.value).toBe('preset:claudeSans');
+      // The preset path is not shown as a custom path
+      expect(screen.queryByDisplayValue(sansPath)).toBeNull();
+
+      fireEvent.change(select, { target: { value: 'followEditor' } });
+      fireEvent.change(select, { target: { value: 'preset:claudeSans' } });
+      expect(onUiFontSelectionChange).toHaveBeenLastCalledWith('preset:claudeSans');
+    });
+  });
 });
+

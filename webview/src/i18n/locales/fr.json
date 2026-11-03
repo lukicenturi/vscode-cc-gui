@@ -193,6 +193,8 @@
         "hint": "Ici vous changez la police de l'interface du plugin ; le code peut utiliser une police séparée.",
         "followOption": "Suivre la police UI d'IDEA ({{font}})",
         "customOption": "Fichier de police UI personnalisé",
+        "presetClaudeSans": "App Claude (Anthropic Sans)",
+        "presetClaudeSerif": "App Claude (Anthropic Serif)",
         "customPathLabel": "Chemin du fichier de police UI",
         "customPathPlaceholder": "Choisissez ou saisissez le chemin d'un fichier .ttf / .otf pour la police UI",
         "browse": "Parcourir",

@@ -13,6 +13,15 @@
 
 import { getAtomicTagTextLength } from './quoteTag.js';
 
+/** Sentinel target offset: the start of a line element (<div>/<p>). */
+const LINE_START = -2;
+
+/** True when the element is a line element (<div>/<p>). */
+function isBlockLine(el: HTMLElement): boolean {
+  const tagName = el.tagName.toLowerCase();
+  return tagName === 'div' || tagName === 'p';
+}
+
 /**
  * Helper: check if text ends with a newline
  */
@@ -189,7 +198,18 @@ export function setVirtualCursorPosition(
       const tagName = el.tagName.toLowerCase();
 
       if (tagName === 'br') {
-        if (position + 1 >= virtualOffset) {
+        // A <br> that is the last child of a line <div> is the placeholder of
+        // an empty line. The offset after its newline is the start of the
+        // next line, so continue to the next node.
+        const isLinePlaceholder =
+          el.nextSibling === null &&
+          el.parentElement !== null &&
+          el.parentElement !== element &&
+          isBlockLine(el.parentElement);
+        if (
+          position + 1 > virtualOffset ||
+          (position + 1 === virtualOffset && !isLinePlaceholder)
+        ) {
           targetNode = el;
           targetOffset = 0;
           return true;
@@ -202,8 +222,9 @@ export function setVirtualCursorPosition(
       if (tagName === 'div' || tagName === 'p') {
         if (position > 0 && !endsWithNewline) {
           if (position + 1 >= virtualOffset) {
+            // The offset is the start of this line
             targetNode = el;
-            targetOffset = 0;
+            targetOffset = LINE_START;
             return true;
           }
           position += 1;
@@ -261,6 +282,19 @@ export function setVirtualCursorPosition(
     if (targetOffset === -1) {
       // Sentinel: place cursor after this element (file tag)
       range.setStartAfter(node);
+      range.collapse(true);
+    } else if (targetOffset === LINE_START) {
+      // Sentinel: place cursor at the start of this line element. Go into
+      // nested line elements (a code fence block holds line <div>s).
+      let lineNode: Node = node;
+      while (
+        lineNode.firstChild &&
+        lineNode.firstChild.nodeType === Node.ELEMENT_NODE &&
+        isBlockLine(lineNode.firstChild as HTMLElement)
+      ) {
+        lineNode = lineNode.firstChild;
+      }
+      range.setStart(lineNode, 0);
       range.collapse(true);
     } else if (node.nodeType === Node.TEXT_NODE) {
       const textNode = node as Text;

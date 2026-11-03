@@ -10,6 +10,8 @@ export interface UseControlledValueSyncOptions {
   setHasContent: (hasContent: boolean) => void;
   adjustHeight: () => void;
   invalidateCache: () => void;
+  /** Called after the external value was written into the input */
+  onSynced?: () => void;
 }
 
 /**
@@ -34,6 +36,7 @@ export function useControlledValueSync({
   setHasContent,
   adjustHeight,
   invalidateCache,
+  onSynced,
 }: UseControlledValueSyncOptions): void {
   useEffect(() => {
     if (value === undefined) return;
@@ -67,6 +70,7 @@ export function useControlledValueSync({
       }
 
       invalidateCache();
+      onSynced?.();
     }
   }, [
     value,
@@ -77,5 +81,6 @@ export function useControlledValueSync({
     setHasContent,
     adjustHeight,
     invalidateCache,
+    onSynced,
   ]);
 }

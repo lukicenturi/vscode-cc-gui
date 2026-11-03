@@ -193,6 +193,8 @@
         "hint": "यहाँ प्लगइन UI का फ़ॉन्ट बदला जाता है; कोड के लिए अलग फ़ॉन्ट चुना जा सकता है।",
         "followOption": "IDEA UI फ़ॉन्ट का पालन करें ({{font}})",
         "customOption": "कस्टम UI फ़ॉन्ट फ़ाइल",
+        "presetClaudeSans": "Claude ऐप (Anthropic Sans)",
+        "presetClaudeSerif": "Claude ऐप (Anthropic Serif)",
         "customPathLabel": "UI फ़ॉन्ट फ़ाइल पथ",
         "customPathPlaceholder": ".ttf / .otf UI फ़ॉन्ट फ़ाइल का पथ चुनें या दर्ज करें",
         "browse": "ब्राउज़ करें",

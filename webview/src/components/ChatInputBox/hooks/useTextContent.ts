@@ -27,6 +27,12 @@ interface ExtractEditableTextOptions {
    * the input HTML.
    */
   quotePlaceholder?: string;
+  /**
+   * When set, each file tag gives this string instead of "@<path>".
+   * The code fence decoration uses it to keep the tags when it rebuilds the
+   * input lines.
+   */
+  fileTagPlaceholder?: string;
 }
 
 /**
@@ -36,6 +42,9 @@ interface ExtractEditableTextOptions {
  * - A quote chip gives the markdown block quote of its data-quote text,
  *   without the trailing newlines (the <br> elements after the chip give them).
  * - <br> gives "\n"; <div>/<p> start on a new line.
+ * - A code fence block (div.input-code-fence) is a transparent container.
+ *   Its line children are <div> elements, so the <div> rule gives a newline
+ *   between them and the text is the same as the text that the user typed.
  *
  * Performance: uses array + join instead of string concatenation (O(n) vs O(n^2)).
  */
@@ -71,8 +80,12 @@ export function extractEditableText(
         }
         node.childNodes.forEach(walk);
       } else if (element.classList.contains('file-tag')) {
-        const filePath = element.getAttribute('data-file-path') || '';
-        textParts.push(`@${filePath}`);
+        if (options.fileTagPlaceholder !== undefined) {
+          textParts.push(options.fileTagPlaceholder);
+        } else {
+          const filePath = element.getAttribute('data-file-path') || '';
+          textParts.push(`@${filePath}`);
+        }
         endsWithNewline = false;
         // Don't traverse file-tag children to avoid duplicate filename and close button text
       } else if (element.classList.contains(QUOTE_TAG_CLASS)) {

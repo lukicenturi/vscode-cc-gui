@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
+import { handleEnterInCodeFence } from '../utils/codeFenceDecoration.js';
 
 interface CompletionOpenLike {
   isOpen: boolean;
@@ -27,6 +28,7 @@ export interface UseNativeEventCaptureOptions {
  * Uses capturing listeners to handle:
  * - IME confirm enter false trigger
  * - beforeinput insertParagraph handling (Enter-to-send mode)
+ * - Enter inside a ``` code fence inserts a newline (Enter-to-send mode)
  * - prompt enhancer shortcut (Cmd+/)
  */
 export function useNativeEventCapture({
@@ -130,6 +132,15 @@ export function useNativeEventCapture({
             !isRecentlyComposing;
 
       if (!isSendKey) return;
+
+      // Enter-to-send mode: a plain Enter inside a code fence inserts a newline.
+      // Cmd/Ctrl+Enter still sends.
+      if (
+        latest.sendShortcut === 'enter' &&
+        handleEnterInCodeFence(ev, latest.editableRef.current)
+      ) {
+        return;
+      }
 
       ev.preventDefault();
       latest.submittedOnEnterRef.current = true;

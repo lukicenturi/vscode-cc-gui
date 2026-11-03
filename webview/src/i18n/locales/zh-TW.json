@@ -193,6 +193,8 @@
         "hint": "這裡修改的是外掛介面字體。程式碼可以使用獨立的程式碼字體。",
         "followOption": "跟隨 IDEA UI 字體（{{font}}）",
         "customOption": "自訂 UI 字體檔案",
+        "presetClaudeSans": "Claude 應用程式 (Anthropic Sans)",
+        "presetClaudeSerif": "Claude 應用程式 (Anthropic Serif)",
         "customPathLabel": "UI 字體檔案路徑",
         "customPathPlaceholder": "選擇或輸入 .ttf / .otf UI 字體檔案路徑",
         "browse": "瀏覽",

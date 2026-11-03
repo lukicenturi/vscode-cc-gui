@@ -777,6 +777,11 @@
     overflow-wrap: break-word;
 }
 
+/* Inline code (not a code block) gets the tinted colour */
+.markdown-content :not(pre) > code {
+    color: var(--color-code-inline-fg);
+}
+
 .markdown-content pre code {
     background-color: transparent;
     padding: 0;
@@ -797,7 +802,17 @@
     word-break: break-all;
 }
 
-.message.user .markdown-content pre code {
+/* The user bubble has a coloured background: keep the bubble text colour */
+.message.user .markdown-content :not(pre) > code {
+    color: var(--color-message-user-text);
+}
+
+.message.user /* Inline code (not a code block) gets the tinted colour */
+.markdown-content :not(pre) > code {
+    color: var(--color-code-inline-fg);
+}
+
+.markdown-content pre code {
     background-color: transparent;
     word-break: normal;
 }

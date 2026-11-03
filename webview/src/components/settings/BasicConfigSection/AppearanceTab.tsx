@@ -3,6 +3,11 @@ import styles from './style.module.less';
 import { useTranslation } from 'react-i18next';
 import type { DiffThemeMode } from '../../../utils/diffTheme';
 import type { UiFontConfig, CodeFontConfig } from '../hooks/useSettingsBasicActions';
+import {
+  findActiveUiFontPreset,
+  UI_FONT_PRESET_PREFIX,
+} from '../../../types/uiFontConfig';
+import type { UiFontPreset } from '../../../types/uiFontConfig';
 
 // Preset colors (module-level constants to avoid recreating on each render)
 const DARK_PRESETS = [
@@ -82,6 +87,19 @@ const DEFAULT_DARK_CHAT_BAR = '#252526';
 const DEFAULT_LIGHT_CHAT_BAR = '#f3f3f3';
 
 const UI_FONT_SELECT_ID = 'settings-ui-font-select';
+
+/** The select value of the UI font option that matches the saved config. */
+function getUiFontSelection(config: UiFontConfig | undefined): string {
+  if (!config || config.mode === 'followEditor') return 'followEditor';
+  const preset = findActiveUiFontPreset(config);
+  return preset ? `${UI_FONT_PRESET_PREFIX}${preset.id}` : 'customFile';
+}
+
+/** The i18n key of the label of a UI font preset. */
+const UI_FONT_PRESET_LABEL_KEYS: Record<UiFontPreset['id'], string> = {
+  claudeSans: 'settings.basic.editorFont.presetClaudeSans',
+  claudeSerif: 'settings.basic.editorFont.presetClaudeSerif',
+};
 const UI_FONT_CUSTOM_PATH_ID = 'settings-ui-font-custom-path';
 const CODE_FONT_SELECT_ID = 'settings-code-font-select';
 const CODE_FONT_CUSTOM_PATH_ID = 'settings-code-font-custom-path';
@@ -178,11 +196,12 @@ const AppearanceTab = ({
   const [hexInput, setHexInput] = useState(chatBgColor || '');
   const [userMsgHexInput, setUserMsgHexInput] = useState(userMsgColor || '');
   const [chatBarHexInput, setChatBarHexInput] = useState(chatBarColor || '');
-  const [selectedUiFontOption, setSelectedUiFontOption] = useState(() => {
-    if (!uiFontConfig || uiFontConfig.mode === 'followEditor') return 'followEditor';
-    return 'customFile';
-  });
-  const [customFontPathDraft, setCustomFontPathDraft] = useState(uiFontConfig?.customFontPath || '');
+  const [selectedUiFontOption, setSelectedUiFontOption] = useState(() => (
+    getUiFontSelection(uiFontConfig)
+  ));
+  const [customFontPathDraft, setCustomFontPathDraft] = useState(() => (
+    findActiveUiFontPreset(uiFontConfig) ? '' : uiFontConfig?.customFontPath || ''
+  ));
   const [selectedCodeFontOption, setSelectedCodeFontOption] = useState(() => {
     if (!codeFontConfig || codeFontConfig.mode === 'followEditor') return 'followEditor';
     return 'customFile';
@@ -207,12 +226,11 @@ const AppearanceTab = ({
   }, [chatBarColor]);
 
   useEffect(() => {
-    if (!uiFontConfig || uiFontConfig.mode === 'followEditor') {
-      setSelectedUiFontOption('followEditor');
-    } else {
-      setSelectedUiFontOption('customFile');
-    }
-    setCustomFontPathDraft(uiFontConfig?.customFontPath || '');
+    setSelectedUiFontOption(getUiFontSelection(uiFontConfig));
+    // Do not put a preset file in the custom path field
+    setCustomFontPathDraft(
+      findActiveUiFontPreset(uiFontConfig) ? '' : uiFontConfig?.customFontPath || ''
+    );
   }, [uiFontConfig]);
 
   useEffect(() => {
@@ -338,11 +356,16 @@ const AppearanceTab = ({
     return chatBgColor.toLowerCase() === presetColor.toLowerCase();
   };
 
-  const hasSavedCustomFont = Boolean(uiFontConfig?.customFontPath);
+  const uiFontPresets = uiFontConfig?.presets ?? [];
+  const activeUiFontPreset = findActiveUiFontPreset(uiFontConfig);
+  // A preset file is not a saved custom file: "Custom" then asks for a path
+  const hasSavedCustomFont = Boolean(uiFontConfig?.customFontPath) && !activeUiFontPreset;
   const isCustomUiFontSelected = selectedUiFontOption === 'customFile';
   const isCustomPathEmpty = customFontPathDraft.trim().length === 0;
-  const currentUiFontDisplayName = uiFontConfig?.displayName || editorFontConfig?.fontFamily || '-';
-  const customFontFileName = uiFontConfig?.customFontPath
+  const currentUiFontDisplayName = activeUiFontPreset
+    ? t(UI_FONT_PRESET_LABEL_KEYS[activeUiFontPreset.id])
+    : uiFontConfig?.displayName || editorFontConfig?.fontFamily || '-';
+  const customFontFileName = uiFontConfig?.customFontPath && !activeUiFontPreset
     ? uiFontConfig.customFontPath.split(/[\\/]/).pop()
     : '';
   const localizedUiFontWarning = uiFontConfig?.warningCode === 'fontUnavailable'
@@ -548,6 +571,11 @@ const AppearanceTab = ({
           <option value="followEditor">
             {t('settings.basic.editorFont.followOption', { font: uiFontConfig?.fontFamily || '-' })}
           </option>
+          {uiFontPresets.map((preset) => (
+            <option key={preset.id} value={`${UI_FONT_PRESET_PREFIX}${preset.id}`}>
+              {t(UI_FONT_PRESET_LABEL_KEYS[preset.id], { defaultValue: preset.label })}
+            </option>
+          ))}
           <option value="customFile">
             {customFontFileName
               ? `${t('settings.basic.editorFont.customOption')} / ${customFontFileName}`

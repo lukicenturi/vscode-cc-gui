@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 export type { UiFontConfig, CodeFontConfig } from '../../../types/uiFontConfig';
 import type { UiFontConfig, CodeFontConfig } from '../../../types/uiFontConfig';
+import { UI_FONT_PRESET_PREFIX } from '../../../types/uiFontConfig';
 import type { CommitAiConfig, CommitAiProvider } from '../../../types/aiFeatureConfig';
 import { DEFAULT_COMMIT_AI_CONFIG } from '../../../types/aiFeatureConfig';
 import type { PromptEnhancerConfig, PromptEnhancerProvider } from '../../../types/promptEnhancer';
@@ -380,13 +381,26 @@ export function useSettingsBasicActions({
       return;
     }
 
+    // A preset is a font file of the local Claude app: save it as a custom file
+    if (selection.startsWith(UI_FONT_PRESET_PREFIX)) {
+      const presetId = selection.slice(UI_FONT_PRESET_PREFIX.length);
+      const preset = uiFontConfig?.presets?.find((item) => item.id === presetId);
+      if (preset) {
+        sendToJava(`set_ui_font_config:${JSON.stringify({
+          mode: 'customFile',
+          customFontPath: preset.path,
+        })}`);
+      }
+      return;
+    }
+
     if (selection === 'customFile' && uiFontConfig?.customFontPath) {
       sendToJava(`set_ui_font_config:${JSON.stringify({
         mode: 'customFile',
         customFontPath: uiFontConfig.customFontPath,
       })}`);
     }
-  }, [uiFontConfig?.customFontPath]);
+  }, [uiFontConfig?.customFontPath, uiFontConfig?.presets]);
 
   const handleSaveUiFontCustomPath = useCallback((path: string) => {
     sendToJava(`set_ui_font_config:${JSON.stringify({

@@ -208,6 +208,8 @@
         "hint": "This controls the plugin UI font only. Code can use a separate code font.",
         "followOption": "Follow IDEA UI font ({{font}})",
         "customOption": "Custom UI font file",
+        "presetClaudeSans": "Claude app (Anthropic Sans)",
+        "presetClaudeSerif": "Claude app (Anthropic Serif)",
         "customPathLabel": "UI font file path",
         "customPathPlaceholder": "Choose or enter a .ttf / .otf UI font file path",
         "browse": "Browse",

@@ -193,6 +193,8 @@
         "hint": "Здесь меняется шрифт интерфейса плагина; для кода можно выбрать отдельный шрифт.",
         "followOption": "Использовать UI-шрифт IDEA ({{font}})",
         "customOption": "Пользовательский файл UI-шрифта",
+        "presetClaudeSans": "Приложение Claude (Anthropic Sans)",
+        "presetClaudeSerif": "Приложение Claude (Anthropic Serif)",
         "customPathLabel": "Путь к файлу UI-шрифта",
         "customPathPlaceholder": "Выберите или введите путь к файлу .ttf / .otf для UI-шрифта",
         "browse": "Обзор",

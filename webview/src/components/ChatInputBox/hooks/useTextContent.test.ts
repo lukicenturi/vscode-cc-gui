@@ -45,4 +45,21 @@ describe('useTextContent', () => {
     expect(extractEditableText(editable, { quotePlaceholder: '#' })).toBe('a # b');
     expect(extractEditableText(editable)).toBe('a > quoted b');
   });
+
+  it('reads a code fence block as its lines with newlines between them', () => {
+    const editable = document.createElement('div');
+    editable.innerHTML = [
+      '<div>intro</div>',
+      '<div class="input-code-fence" data-fence="1">',
+      '<div class="input-code-fence-line input-code-fence-marker">```ts</div>',
+      '<div class="input-code-fence-line">const a = 1;</div>',
+      '<div class="input-code-fence-line"><br></div>',
+      '<div class="input-code-fence-line input-code-fence-marker">```</div>',
+      '</div>',
+      '<div>after</div>',
+    ].join('');
+
+    expect(extractEditableText(editable)).toBe('intro\n```ts\nconst a = 1;\n\n```\nafter');
+  });
 });
+

@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { useSettingsBasicActions } from './useSettingsBasicActions';
 import type { CommitAiConfig } from '../../../types/aiFeatureConfig';
-import type { CodeFontConfig } from '../../../types/uiFontConfig';
+import type { CodeFontConfig, UiFontConfig } from '../../../types/uiFontConfig';
 
 describe('useSettingsBasicActions', () => {
   const defaultCommitAiConfig: CommitAiConfig = {
@@ -117,4 +117,33 @@ describe('useSettingsBasicActions', () => {
 
     expect(window.sendToJava).not.toHaveBeenCalled();
   });
+
+  it('saves a Claude app font preset as a custom UI font file', () => {
+    const { result } = renderHook(() => useSettingsBasicActions({}));
+    const presetPath = '/Applications/Claude.app/Contents/Resources/fonts/AnthropicSans-Romans-Variable-25x258.ttf';
+    const uiFontConfig: UiFontConfig = {
+      mode: 'followEditor',
+      effectiveMode: 'followEditor',
+      fontFamily: 'Inter',
+      fontSize: 13,
+      lineSpacing: 1.5,
+      presets: [{ id: 'claudeSans', label: 'Claude app (Anthropic Sans)', path: presetPath }],
+    };
+
+    act(() => {
+      result.current.setUiFontConfig(uiFontConfig);
+    });
+    act(() => {
+      result.current.handleUiFontSelectionChange('preset:claudeSans');
+    });
+    act(() => {
+      result.current.handleUiFontSelectionChange('preset:claudeSerif');
+    });
+
+    expect(window.sendToJava).toHaveBeenCalledTimes(1);
+    expect(window.sendToJava).toHaveBeenCalledWith(
+      `set_ui_font_config:${JSON.stringify({ mode: 'customFile', customFontPath: presetPath })}`
+    );
+  });
 });
+

@@ -130,6 +130,15 @@ export const DEBOUNCE_TIMING = {
    * Value: 100ms
    */
   ON_INPUT_CALLBACK_MS: 100,
+
+  /**
+   * Debounce delay for the code fence decoration of the chat input (ms).
+   *
+   * The decoration shows ``` fenced regions as code blocks. It changes the
+   * DOM only when the fence structure changes.
+   * Value: 150ms
+   */
+  CODE_FENCE_DECORATION_MS: 150,
 } as const;
 
 /**

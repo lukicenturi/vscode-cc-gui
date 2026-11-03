@@ -193,6 +193,8 @@
         "hint": "여기서는 플러그인 UI 글꼴을 변경합니다. 코드용 글꼴은 별도로 설정할 수 있습니다.",
         "followOption": "IDEA UI 글꼴 따르기 ({{font}})",
         "customOption": "사용자 지정 UI 글꼴 파일",
+        "presetClaudeSans": "Claude 앱 (Anthropic Sans)",
+        "presetClaudeSerif": "Claude 앱 (Anthropic Serif)",
         "customPathLabel": "UI 글꼴 파일 경로",
         "customPathPlaceholder": ".ttf / .otf UI 글꼴 파일 경로를 선택하거나 입력하세요",
         "browse": "찾아보기",

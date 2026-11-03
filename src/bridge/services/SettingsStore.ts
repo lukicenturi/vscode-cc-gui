@@ -5,6 +5,7 @@ import { NodeDetector } from '../../nodeDetector';
 import { isLikelyNodeExecutable } from '../../nodeDetectorUtils';
 import { LanguageConfigPayload, resolveLanguageConfig } from '../../language';
 import { StateStore } from './StateStore';
+import { ClaudeAppFontPreset, detectClaudeAppFontPresets } from './claudeAppFonts';
 import {
   MIN_NODE_MAJOR_VERSION,
   formatNodeRequirementError,
@@ -69,6 +70,8 @@ type FontConfig = {
   fontFormat?: 'truetype' | 'opentype';
   warningCode?: 'fontUnavailable';
   warning?: string;
+  /** Font files of the local Claude desktop app that exist (UI font only) */
+  presets?: ClaudeAppFontPreset[];
 };
 
 export class SettingsStore {
@@ -243,7 +246,24 @@ export class SettingsStore {
   }
 
   getUiFontConfig(): FontConfig {
-    return this.getResolvedFontConfig('ccg.ui_font_config', { appendSansFallback: true });
+    return {
+      ...this.getResolvedFontConfig('ccg.ui_font_config', { appendSansFallback: true }),
+      presets: this.getClaudeAppFontPresets(),
+    };
+  }
+
+  /** The Claude desktop app fonts that exist on this computer. */
+  private getClaudeAppFontPresets(): ClaudeAppFontPreset[] {
+    try {
+      return detectClaudeAppFontPresets({
+        platform: process.platform,
+        exists: (p) => fs.existsSync(p),
+        readDir: (p) => fs.readdirSync(p),
+        env: process.env,
+      });
+    } catch {
+      return [];
+    }
   }
 
   async setUiFontConfig(content: string): Promise<FontConfig> {

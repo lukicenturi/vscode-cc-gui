@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, MutableRefObject } from 'react';
+import { handleEnterInCodeFence } from '../utils/codeFenceDecoration.js';
 
 interface CompletionWithKeyDown {
   isOpen: boolean;
@@ -36,6 +37,11 @@ export interface UseKeyboardHandlerOptions {
   completionSelectedRef: MutableRefObject<boolean>;
   submittedOnEnterRef: MutableRefObject<boolean>;
   handleSubmit: () => void;
+  /**
+   * The chat input element. When set, Enter inside a ``` code fence inserts
+   * a newline instead of sending (Enter-to-send mode).
+   */
+  editableRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 /**
@@ -45,6 +51,7 @@ export interface UseKeyboardHandlerOptions {
  * - Completion dropdown navigation
  * - History navigation (when input empty)
  * - Send shortcut (Enter / Cmd+Enter)
+ * - Enter inside a ``` code fence inserts a newline (Cmd/Ctrl+Enter still sends)
  * - Preventing IME "confirm enter" false send
  */
 export function useKeyboardHandler({
@@ -64,6 +71,7 @@ export function useKeyboardHandler({
   completionSelectedRef,
   submittedOnEnterRef,
   handleSubmit,
+  editableRef,
 }: UseKeyboardHandlerOptions) {
   const onKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -151,6 +159,16 @@ export function useKeyboardHandler({
 
       if (!isSendKey) return;
 
+      // Enter-to-send mode: a plain Enter inside a code fence inserts a newline.
+      // Cmd/Ctrl+Enter still sends.
+      if (
+        sendShortcut === 'enter' &&
+        editableRef &&
+        handleEnterInCodeFence(e, editableRef.current, e.nativeEvent)
+      ) {
+        return;
+      }
+
       e.preventDefault();
       if (sdkStatusLoading || !sdkInstalled) return;
 
@@ -174,6 +192,7 @@ export function useKeyboardHandler({
       submittedOnEnterRef,
       completionSelectedRef,
       handleSubmit,
+      editableRef,
     ]
   );
 
