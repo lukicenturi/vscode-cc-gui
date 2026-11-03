@@ -17,6 +17,7 @@ import {
   saveTimestamps,
   cleanupCounts,
 } from './inputHistoryStorage.js';
+import { setEditableText } from '../utils/editableText.js';
 
 // Re-export everything from storage for backward compatibility
 export {
@@ -87,7 +88,7 @@ export function useInputHistory({
       if (!el) return;
 
       try {
-        el.innerText = nextText;
+        setEditableText(el, nextText);
 
         // Move cursor to end
         const range = document.createRange();

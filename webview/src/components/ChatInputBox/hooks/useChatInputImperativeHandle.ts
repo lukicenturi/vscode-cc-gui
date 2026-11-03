@@ -1,6 +1,7 @@
 import { useImperativeHandle } from 'react';
 import type { ForwardedRef, MutableRefObject } from 'react';
 import type { ChatInputBoxHandle, FileTagInfo } from '../types.js';
+import { setEditableText } from '../utils/editableText.js';
 
 export interface UseChatInputImperativeHandleOptions {
   ref: ForwardedRef<ChatInputBoxHandle>;
@@ -44,7 +45,7 @@ export function useChatInputImperativeHandle({
       setValue: (newValue: string) => {
         if (!editableRef.current) return;
         isExternalUpdateRef.current = true;
-        editableRef.current.innerText = newValue;
+        setEditableText(editableRef.current, newValue);
         setHasContent(!!newValue.trim());
         adjustHeight();
         invalidateCache();

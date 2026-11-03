@@ -3,6 +3,7 @@ import type { ForwardedRef, MutableRefObject, RefObject } from 'react';
 import { cutSelection } from '../../../hooks/useContextMenu.js';
 import type { ChatInputBoxHandle, FileTagInfo } from '../types.js';
 import { useChatInputImperativeHandle } from './useChatInputImperativeHandle.js';
+import { setEditableText } from '../utils/editableText.js';
 
 interface InlineCompletionController {
   applySuggestion: () => string | null;
@@ -57,7 +58,7 @@ export function useChatInputSelectionController({
     const fullText = inlineCompletion.applySuggestion();
     if (!fullText || !editableRef.current) return false;
 
-    editableRef.current.innerText = fullText;
+    setEditableText(editableRef.current, fullText);
 
     const range = document.createRange();
     const selection = window.getSelection();

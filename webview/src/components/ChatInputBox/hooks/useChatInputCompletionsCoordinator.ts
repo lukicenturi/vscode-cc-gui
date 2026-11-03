@@ -17,7 +17,7 @@ import {
   type AgentItem,
   type PromptItem,
 } from '../providers/index.js';
-import { setCursorOffset } from '../utils/selectionUtils.js';
+import { setCaretAtTextOffset, setEditableText } from '../utils/editableText.js';
 
 interface UseChatInputCompletionsCoordinatorOptions {
   editableRef: RefObject<HTMLDivElement | null>;
@@ -44,9 +44,9 @@ function replaceTextAndSync(
 ) {
   if (!editableRef.current) return;
   const newText = replaceText(text, replacement, query);
-  editableRef.current.innerText = newText;
+  setEditableText(editableRef.current, newText);
   const cursorPos = query.start + replacement.length;
-  setCursorOffset(editableRef.current, cursorPos);
+  setCaretAtTextOffset(editableRef.current, cursorPos);
   handleInput();
 }
 
@@ -84,9 +84,9 @@ export function useChatInputCompletionsCoordinator({
         pathMappingRef.current.set(file.absolutePath, file.absolutePath);
       }
 
-      editableRef.current.innerText = newText;
+      setEditableText(editableRef.current, newText);
       const cursorPos = query.start + replacement.length;
-      setCursorOffset(editableRef.current, cursorPos);
+      setCaretAtTextOffset(editableRef.current, cursorPos);
       handleInputRef.current();
       setCursorAfterPath(path);
 
@@ -134,8 +134,8 @@ export function useChatInputCompletionsCoordinator({
 
       if (!editableRef.current || !query) return;
       const newText = agentCompletion.replaceText(getTextContent(), '', query);
-      editableRef.current.innerText = newText;
-      setCursorOffset(editableRef.current, query.start);
+      setEditableText(editableRef.current, newText);
+      setCaretAtTextOffset(editableRef.current, query.start);
       handleInputRef.current();
     },
   });
@@ -157,8 +157,8 @@ export function useChatInputCompletionsCoordinator({
         onOpenPromptSettings?.();
         if (!editableRef.current || !query) return;
         const newText = promptCompletion.replaceText(getTextContent(), '', query);
-        editableRef.current.innerText = newText;
-        setCursorOffset(editableRef.current, query.start);
+        setEditableText(editableRef.current, newText);
+        setCaretAtTextOffset(editableRef.current, query.start);
         handleInputRef.current();
         return;
       }

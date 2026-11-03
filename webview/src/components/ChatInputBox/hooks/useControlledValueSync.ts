@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import type { MutableRefObject } from 'react';
+import { setEditableText } from '../utils/editableText.js';
 
 export interface UseControlledValueSyncOptions {
   value: string | undefined;
@@ -54,7 +55,7 @@ export function useControlledValueSync({
     if (currentText !== value) {
       isExternalUpdateRef.current = true;
 
-      editableRef.current.innerText = value;
+      setEditableText(editableRef.current, value);
       setHasContent(!!value.trim());
       adjustHeight();
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { setEditableText } from '../utils/editableText.js';
 
 declare global {
   interface Window {
@@ -79,7 +80,7 @@ export function usePromptEnhancer({
   const handleUseEnhancedPrompt = useCallback(() => {
     if (enhancedPrompt && editableRef.current) {
       // Replace input box content with enhanced prompt
-      editableRef.current.innerText = enhancedPrompt;
+      setEditableText(editableRef.current, enhancedPrompt);
       setHasContent(true);
       onInput?.(enhancedPrompt);
     }
