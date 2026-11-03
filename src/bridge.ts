@@ -1490,6 +1490,27 @@ export class BridgeServer {
         // normalized assistant snapshot). The webview starts a fresh thinking
         // block instead of merging subsequent deltas into the previous one.
         webview.postMessage({ type: 'block_reset' });
+      } else if (line.startsWith('[STREAM_ROLLBACK] ')) {
+        // API retry: Claude Code restarts the request and streams the answer
+        // again from the start. Drop the failed attempt's streamed characters
+        // so the webview does not show the answer several times.
+        let content = 0;
+        let thinking = 0;
+        try {
+          const parsed = JSON.parse(line.slice('[STREAM_ROLLBACK] '.length));
+          content = Math.max(0, Math.floor(Number(parsed?.content) || 0));
+          thinking = Math.max(0, Math.floor(Number(parsed?.thinking) || 0));
+        } catch {
+          // Malformed payload: nothing to roll back.
+        }
+        this._log.appendLine(`[STREAM] id=${msg.id} rollback content=${content} thinking=${thinking}`);
+        if (content > 0 || thinking > 0) {
+          webview.postMessage({ type: 'stream_rollback', content: JSON.stringify({ content, thinking }) });
+          if (content > 0) {
+            const prev = this._latestAssistantPreview.get(msg.id) ?? '';
+            this._latestAssistantPreview.set(msg.id, prev.slice(0, Math.max(0, prev.length - content)));
+          }
+        }
       } else if (line.startsWith('[CONTENT_DELTA] ')) {
         let delta: string;
         const rawDelta = line.slice('[CONTENT_DELTA] '.length);

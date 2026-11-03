@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createTurnState,
+  processApiRetry,
   processMessageContent,
   processStreamEvent,
   shouldOutputMessage,
@@ -1270,4 +1271,199 @@ test('BLOCK_RESET: later content_block_start separates streamed thinking blocks'
       JSON.parse(line.replace(/^\[THINKING_DELTA\]\s+/, '').trim())),
     ['first', 'second'],
   );
+});
+
+// =========================================================================
+// STREAM_ROLLBACK: when the API stream fails mid-response, Claude Code emits
+// a system/api_retry message and streams the answer again from the start.
+// The failed attempt's text must be rolled back, otherwise the UI shows the
+// same answer several times as growing prefixes.
+// =========================================================================
+
+function streamEvent(event) {
+  return { type: 'stream_event', event };
+}
+
+function textDelta(text, index = 0) {
+  return streamEvent({ type: 'content_block_delta', index, delta: { type: 'text_delta', text } });
+}
+
+function thinkingDelta(thinking, index = 0) {
+  return streamEvent({ type: 'content_block_delta', index, delta: { type: 'thinking_delta', thinking } });
+}
+
+function messageStart() {
+  return streamEvent({ type: 'message_start', message: { usage: {} } });
+}
+
+function blockStart(type, index) {
+  return streamEvent({ type: 'content_block_start', index, content_block: { type } });
+}
+
+function apiRetry() {
+  return {
+    type: 'system',
+    subtype: 'api_retry',
+    attempt: 1,
+    max_retries: 10,
+    retry_delay_ms: 500,
+    error: 'stream interrupted',
+    error_status: null,
+  };
+}
+
+function withSilencedStderr(fn) {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    return fn();
+  } finally {
+    console.error = original;
+  }
+}
+
+function rollbackPayloads(captured) {
+  return tagLines(captured, '[STREAM_ROLLBACK]').map((line) =>
+    JSON.parse(line.slice('[STREAM_ROLLBACK] '.length)));
+}
+
+function contentDeltas(captured) {
+  return tagLines(captured, '[CONTENT_DELTA]').map((line) =>
+    JSON.parse(line.slice('[CONTENT_DELTA] '.length)));
+}
+
+test('STREAM_ROLLBACK: api_retry after partial deltas rolls back the emitted characters', () => {
+  const state = makeTurnState(true);
+  state.hasStreamEvents = true;
+  const captured = withSilencedStderr(() => captureStdout(() => {
+    processStreamEvent(messageStart(), state);
+    processStreamEvent(blockStart('thinking', 0), state);
+    processStreamEvent(thinkingDelta('Let me think'), state);
+    processStreamEvent(blockStart('text', 1), state);
+    processStreamEvent(textDelta('Done. The fix', 1), state);
+    processStreamEvent(textDelta('\n\n**What was wro', 1), state);
+
+    assert.equal(processApiRetry(apiRetry(), state), true);
+
+    // The retry streams the answer again from the start.
+    processStreamEvent(messageStart(), state);
+    processStreamEvent(blockStart('text', 0), state);
+    processStreamEvent(textDelta('Done. The fix', 0), state);
+    processStreamEvent(textDelta(' is implemented', 0), state);
+  }));
+
+  assert.deepEqual(rollbackPayloads(captured), [
+    { content: 'Done. The fix\n\n**What was wro'.length, thinking: 'Let me think'.length },
+  ]);
+  assert.match(
+    captured.find((line) => line.startsWith('[STREAM_ROLLBACK]')),
+    /^\[STREAM_ROLLBACK\] \{"content":\d+,"thinking":\d+\}\n$/,
+  );
+  // The rollback comes before the retried stream, and the retried deltas are
+  // emitted fresh (not absorbed as a replay of the failed attempt).
+  const rollbackIdx = captured.findIndex((line) => line.startsWith('[STREAM_ROLLBACK]'));
+  const lastBlockReset = captured.findLastIndex((line) => line.startsWith('[BLOCK_RESET]'));
+  assert.ok(rollbackIdx < lastBlockReset);
+  assert.deepEqual(contentDeltas(captured.slice(rollbackIdx)), ['Done. The fix', ' is implemented']);
+  assert.equal(state.emittedContentSinceMessageStart, 'Done. The fix is implemented'.length);
+  assert.equal(state.emittedThinkingSinceMessageStart, 0);
+});
+
+test('STREAM_ROLLBACK: message_start while the previous message is still open rolls back', () => {
+  const state = makeTurnState(true);
+  state.hasStreamEvents = true;
+  const captured = captureStdout(() => {
+    processStreamEvent(messageStart(), state);
+    processStreamEvent(textDelta('Partial answ'), state);
+    // No message_stop and no assistant message: the stream was restarted.
+    processStreamEvent(messageStart(), state);
+    processStreamEvent(textDelta('Partial answer'), state);
+  });
+
+  assert.deepEqual(rollbackPayloads(captured), [{ content: 'Partial answ'.length, thinking: 0 }]);
+  const rollbackIdx = captured.findIndex((line) => line.startsWith('[STREAM_ROLLBACK]'));
+  assert.deepEqual(contentDeltas(captured.slice(rollbackIdx)), ['Partial answer']);
+});
+
+test('STREAM_ROLLBACK: message_start after message_stop does not roll back (tool-use loop)', () => {
+  const state = makeTurnState(true);
+  state.hasStreamEvents = true;
+  const captured = withSilencedStderr(() => captureStdout(() => {
+    processStreamEvent(messageStart(), state);
+    processStreamEvent(textDelta('Reading the file.'), state);
+    processStreamEvent(streamEvent({ type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: {} }), state);
+    processStreamEvent(streamEvent({ type: 'message_stop' }), state);
+    // A retry of the NEXT request must not roll back the completed message.
+    processApiRetry(apiRetry(), state);
+    processStreamEvent(messageStart(), state);
+    processStreamEvent(textDelta('The file says hi.'), state);
+  }));
+
+  assert.deepEqual(rollbackPayloads(captured), []);
+  assert.deepEqual(contentDeltas(captured), ['Reading the file.', 'The file says hi.']);
+});
+
+test('STREAM_ROLLBACK: message_start after an assistant message does not roll back', () => {
+  const state = makeTurnState(true);
+  state.hasStreamEvents = true;
+  const captured = captureStdout(() => {
+    processStreamEvent(messageStart(), state);
+    processStreamEvent(textDelta('Calling a tool'), state);
+    // message_stop is not delivered; the assistant snapshot closes the message.
+    processMessageContent({
+      type: 'assistant',
+      message: {
+        id: 'msg-1',
+        content: [
+          { type: 'text', text: 'Calling a tool' },
+          { type: 'tool_use', id: 't1', name: 'Read', input: {} },
+        ],
+      },
+    }, state);
+    processStreamEvent(messageStart(), state);
+    processStreamEvent(textDelta('Next turn'), state);
+  });
+
+  assert.deepEqual(rollbackPayloads(captured), []);
+  assert.equal(tagLines(captured, '[BLOCK_RESET]').length >= 2, true);
+});
+
+test('STREAM_ROLLBACK: api_retry before any delta writes nothing', () => {
+  const state = makeTurnState(true);
+  state.hasStreamEvents = true;
+  const captured = withSilencedStderr(() => captureStdout(() => {
+    processApiRetry(apiRetry(), state);
+    processStreamEvent(messageStart(), state);
+    processApiRetry(apiRetry(), state);
+  }));
+
+  assert.deepEqual(captured.filter((line) => !line.startsWith('[BLOCK_RESET]')), []);
+});
+
+test('STREAM_ROLLBACK: snapshot tail-fill characters are counted', () => {
+  const state = makeTurnState(true);
+  state.hasStreamEvents = true;
+  const captured = withSilencedStderr(() => captureStdout(() => {
+    processStreamEvent(messageStart(), state);
+    processStreamEvent(textDelta('Hello'), state);
+    // Snapshot carries a longer text block: the tail " world" is filled in.
+    processMessageContent({
+      type: 'assistant',
+      message: { id: 'msg-1', content: [{ type: 'text', text: 'Hello world' }] },
+    }, state);
+    processApiRetry(apiRetry(), state);
+  }));
+
+  assert.deepEqual(contentDeltas(captured), ['Hello', ' world']);
+  assert.deepEqual(rollbackPayloads(captured), [{ content: 'Hello world'.length, thinking: 0 }]);
+});
+
+test('STREAM_ROLLBACK: api_retry is ignored when streaming is disabled', () => {
+  const state = makeTurnState(false);
+  state.emittedContentSinceMessageStart = 5;
+  const captured = withSilencedStderr(() => captureStdout(() => {
+    assert.equal(processApiRetry(apiRetry(), state), true);
+  }));
+  assert.deepEqual(captured, []);
+  assert.equal(processApiRetry({ type: 'system', subtype: 'init' }, state), false);
 });

@@ -35,8 +35,78 @@ export function createTurnState(requestContext, runtime) {
     textBlockContentByIndex: new Map(),
     thinkingBlockContentByIndex: new Map(),
     finalSessionId: requestContext.requestedSessionId || runtime?.sessionId || '',
-    accumulatedUsage: null
+    accumulatedUsage: null,
+    // Per message attempt bookkeeping for [STREAM_ROLLBACK] (see emitStreamRollback).
+    emittedContentSinceMessageStart: 0,
+    emittedThinkingSinceMessageStart: 0,
+    messageOpen: false
   };
+}
+
+/**
+ * Write one [CONTENT_DELTA] line and count its characters against the current
+ * message attempt, so that a later API retry can roll the attempt back.
+ */
+export function writeContentDelta(turnState, delta) {
+  process.stdout.write(`[CONTENT_DELTA] ${JSON.stringify(delta)}\n`);
+  turnState.emittedContentSinceMessageStart = (turnState.emittedContentSinceMessageStart || 0) + delta.length;
+}
+
+/** Thinking counterpart of {@link writeContentDelta}. */
+export function writeThinkingDelta(turnState, delta) {
+  process.stdout.write(`[THINKING_DELTA] ${JSON.stringify(delta)}\n`);
+  turnState.emittedThinkingSinceMessageStart = (turnState.emittedThinkingSinceMessageStart || 0) + delta.length;
+}
+
+/**
+ * Discard the text that the current (failed) message attempt streamed.
+ *
+ * When the API stream fails mid-response, Claude Code retries the request and
+ * streams the answer again from the start. Without a rollback, the frontend
+ * appends the regenerated answer to the partial one and shows the same prefix
+ * several times. The frontend removes the last `content` / `thinking`
+ * characters from its cumulative buffers when it receives this marker.
+ *
+ * Marker format: `[STREAM_ROLLBACK] {"content":<n>,"thinking":<m>}`
+ */
+export function emitStreamRollback(turnState) {
+  const content = turnState.emittedContentSinceMessageStart || 0;
+  const thinking = turnState.emittedThinkingSinceMessageStart || 0;
+  if (content > 0 || thinking > 0) {
+    process.stdout.write(`[STREAM_ROLLBACK] ${JSON.stringify({ content, thinking })}\n`);
+  }
+  turnState.emittedContentSinceMessageStart = 0;
+  turnState.emittedThinkingSinceMessageStart = 0;
+  resetTurnBlockState(turnState);
+}
+
+/**
+ * Handle a `{type:'system', subtype:'api_retry'}` message from Claude Code.
+ * Returns true when the message was an api_retry message.
+ */
+export function processApiRetry(msg, turnState) {
+  if (msg?.type !== 'system' || msg.subtype !== 'api_retry') return false;
+  const error = typeof msg.error === 'string' ? msg.error : JSON.stringify(msg.error ?? '');
+  console.error(
+    `[RETRY] API retry attempt=${msg.attempt}/${msg.max_retries}`
+    + ` delay_ms=${msg.retry_delay_ms} status=${msg.error_status ?? ''}`
+    + ` error=${String(error).slice(0, 300)}`
+  );
+  if (!turnState.streamingEnabled) return true;
+  emitStreamRollback(turnState);
+  turnState.messageOpen = false;
+  return true;
+}
+
+/**
+ * Mark the current message attempt as complete. A complete message is final,
+ * so a later retry (for example of the next request in a tool-use loop) must
+ * not roll back its text.
+ */
+function closeStreamMessage(turnState) {
+  turnState.messageOpen = false;
+  turnState.emittedContentSinceMessageStart = 0;
+  turnState.emittedThinkingSinceMessageStart = 0;
 }
 
 export function processStreamEvent(msg, turnState) {
@@ -44,6 +114,15 @@ export function processStreamEvent(msg, turnState) {
   if (!event) return;
 
   if (event.type === 'message_start') {
+    // A new message_start while the previous message never closed means that
+    // Claude Code restarted the request (stream failure + retry). Discard the
+    // text of the failed attempt before the regenerated answer streams in.
+    if (turnState.messageOpen && turnState.streamingEnabled) {
+      emitStreamRollback(turnState);
+    }
+    turnState.messageOpen = true;
+    turnState.emittedContentSinceMessageStart = 0;
+    turnState.emittedThinkingSinceMessageStart = 0;
     // Turn boundary: each assistant message (incl. every tool_use loop iteration)
     // re-numbers its content blocks from index 0. Clear the index-keyed block maps
     // so the prior turn's accumulator / locked stream-mode cannot corrupt or
@@ -78,17 +157,21 @@ export function processStreamEvent(msg, turnState) {
     emitAccumulatedUsage(turnState.accumulatedUsage);
   }
 
+  if (event.type === 'message_stop' || (event.type === 'message_delta' && event.delta?.stop_reason)) {
+    closeStreamMessage(turnState);
+  }
+
   if (event.type === 'content_block_delta' && event.delta) {
     if (event.delta.type === 'text_delta' && event.delta.text) {
       const delta = normalizeStreamDelta(turnState, 'text', event.index, event.delta.text);
       if (delta) {
-        process.stdout.write(`[CONTENT_DELTA] ${JSON.stringify(delta)}\n`);
+        writeContentDelta(turnState, delta);
         turnState.lastAssistantContent += delta;
       }
     } else if (event.delta.type === 'thinking_delta' && event.delta.thinking) {
       const delta = normalizeStreamDelta(turnState, 'thinking', event.index, event.delta.thinking);
       if (delta) {
-        process.stdout.write(`[THINKING_DELTA] ${JSON.stringify(delta)}\n`);
+        writeThinkingDelta(turnState, delta);
         turnState.lastThinkingContent += delta;
       }
     }
@@ -97,6 +180,10 @@ export function processStreamEvent(msg, turnState) {
 
 export function processMessageContent(msg, turnState) {
   if (msg.type !== 'assistant') return;
+  // An assistant message means that the SDK accepted (part of) the response.
+  // Close the message so that the next message_start of a tool-use loop does
+  // not roll back, even when message_stop was not delivered.
+  turnState.messageOpen = false;
   const content = msg.message?.content;
 
   if (Array.isArray(content)) {
@@ -144,7 +231,7 @@ function emitSnapshotText(currentText, turnState, blockIndex) {
   }
   const { delta, hadPrevious } = resolveSnapshotDelta(turnState, 'text', blockIndex, currentText);
   if (delta && (!turnState.hasStreamEvents || hadPrevious)) {
-    process.stdout.write(`[CONTENT_DELTA] ${JSON.stringify(delta)}\n`);
+    writeContentDelta(turnState, delta);
   }
   turnState.lastAssistantContent = currentText;
 }
@@ -157,7 +244,7 @@ function emitSnapshotThinking(thinkingText, turnState, blockIndex) {
   }
   const { delta, hadPrevious } = resolveSnapshotDelta(turnState, 'thinking', blockIndex, thinkingText);
   if (delta && (!turnState.hasStreamEvents || hadPrevious)) {
-    process.stdout.write(`[THINKING_DELTA] ${JSON.stringify(delta)}\n`);
+    writeThinkingDelta(turnState, delta);
   }
   turnState.lastThinkingContent = thinkingText;
 }

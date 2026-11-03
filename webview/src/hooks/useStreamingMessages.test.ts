@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { useStreamingMessages } from './useStreamingMessages';
+import { clampStreamingBlockBoundaries, useStreamingMessages } from './useStreamingMessages';
 import type { ClaudeMessage } from '../types';
 import { getContentBlocks, normalizeBlocks } from '../utils/messageUtils';
 
@@ -626,6 +626,184 @@ describe('useStreamingMessages', () => {
 
     expect(rawContent).toHaveLength(1);
     expect(rawContent[0]).toMatchObject({ type: 'thinking', thinking: 'AB' });
+  });
+});
+
+describe('clampStreamingBlockBoundaries', () => {
+  it('keeps boundaries that are inside both new lengths', () => {
+    const boundaries = [
+      { contentLength: 2, thinkingLength: 1 },
+      { contentLength: 5, thinkingLength: 3 },
+    ];
+    expect(clampStreamingBlockBoundaries(boundaries, 5, 3)).toEqual(boundaries);
+  });
+
+  it('clamps only the offset that is past its new length', () => {
+    expect(clampStreamingBlockBoundaries(
+      [{ contentLength: 10, thinkingLength: 2 }],
+      4,
+      6,
+    )).toEqual([{ contentLength: 4, thinkingLength: 2 }]);
+  });
+
+  it('merges boundaries that become equal after the clamp and keeps the order', () => {
+    expect(clampStreamingBlockBoundaries(
+      [
+        { contentLength: 1, thinkingLength: 0 },
+        { contentLength: 4, thinkingLength: 0 },
+        { contentLength: 8, thinkingLength: 0 },
+        { contentLength: 12, thinkingLength: 0 },
+      ],
+      3,
+      0,
+    )).toEqual([
+      { contentLength: 1, thinkingLength: 0 },
+      { contentLength: 3, thinkingLength: 0 },
+    ]);
+  });
+});
+
+describe('useStreamingMessages rollbackStreamingBuffers', () => {
+  const textsOf = (message: ClaudeMessage, kind: 'text' | 'thinking') =>
+    ((message.raw as any)?.message?.content as ContentBlockTest[] ?? [])
+      .filter((block) => block.type === kind)
+      .map((block) => (kind === 'thinking' ? block.thinking : block.text));
+
+  it('truncates both buffers and clamps at 0', () => {
+    const { result } = renderHook(() => useStreamingMessages());
+    result.current.streamingContentRef.current = 'Hello world';
+    result.current.streamingThinkingRef.current = 'Hmm';
+
+    result.current.rollbackStreamingBuffers(6, 10);
+
+    expect(result.current.streamingContentRef.current).toBe('Hello');
+    expect(result.current.streamingThinkingRef.current).toBe('');
+  });
+
+  it('does nothing for a zero or invalid rollback', () => {
+    const { result } = renderHook(() => useStreamingMessages());
+    result.current.streamingContentRef.current = 'Hello';
+    result.current.rollbackStreamingBuffers(0, 0);
+    result.current.rollbackStreamingBuffers(Number.NaN, -3);
+    expect(result.current.streamingContentRef.current).toBe('Hello');
+
+    const assistant: ClaudeMessage = { type: 'assistant', content: 'Hello there', isStreaming: true };
+    // No rollback happened, so the longer message content still wins.
+    expect(result.current.patchAssistantForStreaming(assistant).content).toBe('Hello there');
+  });
+
+  it('keeps a recorded boundary that is still inside the shorter buffer', () => {
+    const { result } = renderHook(() => useStreamingMessages());
+    result.current.streamingContentRef.current = 'Before';
+    result.current.recordStreamingBlockReset();
+    result.current.streamingContentRef.current = 'BeforeAfterX';
+
+    result.current.rollbackStreamingBuffers(1, 0);
+
+    const patched = result.current.patchAssistantForStreaming({
+      type: 'assistant',
+      content: 'BeforeAfterX',
+      isStreaming: true,
+      raw: { message: { content: [{ type: 'text', text: 'BeforeAfterX' }] } },
+    });
+    expect(patched.content).toBe('BeforeAfter');
+    expect(textsOf(patched, 'text')).toEqual(['Before', 'After']);
+  });
+
+  it('clamps a boundary that is past the shorter buffer instead of keeping the old offset', () => {
+    const { result } = renderHook(() => useStreamingMessages());
+    result.current.streamingContentRef.current = 'Before';
+    result.current.recordStreamingBlockReset();
+    result.current.streamingContentRef.current = 'BeforeAfter';
+
+    result.current.rollbackStreamingBuffers(8, 0);
+    expect(result.current.streamingContentRef.current).toBe('Bef');
+
+    // The retried answer grows past the old boundary offset (6). The stale
+    // offset must not split the new text at 6.
+    result.current.streamingContentRef.current = 'BefXYZWVUTS';
+    const patched = result.current.patchAssistantForStreaming({
+      type: 'assistant',
+      content: 'BeforeAfter',
+      isStreaming: true,
+      raw: { message: { content: [{ type: 'text', text: 'Before' }, { type: 'text', text: 'After' }] } },
+    });
+    expect(patched.content).toBe('BefXYZWVUTS');
+    // The boundary is clamped to the rollback point (3), where the retried
+    // message starts its new block.
+    expect(textsOf(patched, 'text')).toEqual(['Bef', 'XYZWVUTS']);
+  });
+
+  it('replaces longer rendered text and thinking with the shorter buffers', () => {
+    const { result } = renderHook(() => useStreamingMessages());
+    result.current.streamingThinkingRef.current = 'Think';
+    result.current.streamingContentRef.current = 'Answer';
+
+    result.current.rollbackStreamingBuffers(6, 5);
+
+    const patched = result.current.patchAssistantForStreaming({
+      type: 'assistant',
+      content: 'Answer',
+      isStreaming: true,
+      raw: {
+        message: {
+          content: [
+            { type: 'thinking', thinking: 'Think', text: 'Think' },
+            { type: 'text', text: 'Answer' },
+          ],
+        },
+      },
+    });
+
+    expect(patched.content).toBe('');
+    expect(textsOf(patched, 'thinking')).toEqual([]);
+    expect(textsOf(patched, 'text')).toEqual([]);
+  });
+
+  it('drops the failed text after a tool_use but keeps the tool block and earlier text', () => {
+    const { result } = renderHook(() => useStreamingMessages());
+    result.current.streamingContentRef.current = 'Pre textPost';
+
+    const assistant: ClaudeMessage = {
+      type: 'assistant',
+      content: 'Pre textPost',
+      isStreaming: true,
+      raw: {
+        message: {
+          content: [
+            { type: 'text', text: 'Pre text' },
+            { type: 'tool_use', id: 'tool-1', name: 'Read', input: {} },
+            { type: 'text', text: 'Post' },
+          ],
+        },
+      },
+    };
+
+    result.current.rollbackStreamingBuffers(4, 0);
+    const patched = result.current.patchAssistantForStreaming(assistant);
+    const rawContent = (patched.raw as any).message.content as ContentBlockTest[];
+
+    expect(patched.content).toBe('Pre text');
+    expect(rawContent.map((block) => block.type)).toEqual(['text', 'tool_use']);
+    expect(rawContent[0].text).toBe('Pre text');
+  });
+
+  it('applies the rollback one time per message, then longer backend content wins again', () => {
+    const { result } = renderHook(() => useStreamingMessages());
+    result.current.streamingContentRef.current = 'Old partial';
+    result.current.rollbackStreamingBuffers(11, 0);
+    result.current.streamingContentRef.current = 'New';
+
+    const first = result.current.patchAssistantForStreaming({
+      type: 'assistant',
+      content: 'Old partial',
+      isStreaming: true,
+    });
+    expect(first.content).toBe('New');
+
+    // A later backend snapshot that is ahead of the deltas is accepted again.
+    const second = result.current.patchAssistantForStreaming({ ...first, content: 'New answer' });
+    expect(second.content).toBe('New answer');
   });
 });
 

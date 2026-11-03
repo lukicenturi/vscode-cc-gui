@@ -143,7 +143,7 @@ const App = () => {
     streamingMessageIndexRef, contentUpdateTimeoutRef, thinkingUpdateTimeoutRef,
     lastContentUpdateRef, lastThinkingUpdateRef, autoExpandedThinkingKeysRef,
     streamingTurnIdRef, turnIdCounterRef, recordStreamingBlockReset,
-    clearStreamingBlockResets,
+    clearStreamingBlockResets, rollbackStreamingBuffers,
     findLastAssistantIndex, extractRawBlocks,
     getOrCreateStreamingAssistantIndex, patchAssistantForStreaming,
   } = useStreamingMessages();
@@ -328,7 +328,7 @@ const App = () => {
     autoExpandedThinkingKeysRef,
     streamingMessageIndexRef,
     streamingTurnIdRef, turnIdCounterRef, recordStreamingBlockReset,
-    clearStreamingBlockResets,
+    clearStreamingBlockResets, rollbackStreamingBuffers,
     lastContentUpdateRef, contentUpdateTimeoutRef,
     lastThinkingUpdateRef, thinkingUpdateTimeoutRef,
     findLastAssistantIndex, extractRawBlocks,

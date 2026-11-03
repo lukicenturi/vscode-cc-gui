@@ -775,6 +775,14 @@ interface Window {
   onBlockReset?: () => void;
 
   /**
+   * Stream rollback callback - fired when the API stream failed and Claude
+   * Code retries the request. The payload is a JSON string
+   * `{"content":<n>,"thinking":<m>}`: the number of characters of the failed
+   * attempt to remove from the end of the streaming buffers.
+   */
+  onStreamRollback?: (json: string) => void;
+
+  /**
    * Stream end callback - called when streaming ends
    */
   onStreamEnd?: (sequence?: string | number) => void;

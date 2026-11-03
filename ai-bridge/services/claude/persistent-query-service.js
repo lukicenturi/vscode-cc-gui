@@ -59,6 +59,7 @@ import { loadMcpServersConfigAsRecord } from './mcp-status/config-loader.js';
 import {
   createTurnState,
   emitUsageTag,
+  processApiRetry,
   processMessageContent,
   processStreamEvent,
   processToolResultMessages,
@@ -391,6 +392,11 @@ async function executeTurn(runtime, requestContext, turnMeta) {
         processStreamEvent(msg, turnState);
         continue;
       }
+
+      // API retry: Claude Code restarts the request and streams the answer
+      // again from the start. Roll back the failed attempt's streamed text
+      // first, so that the frontend does not show the answer twice.
+      processApiRetry(msg, turnState);
 
       // Preserve all existing message processing logic
       if (shouldOutputMessage(msg, turnState)) {

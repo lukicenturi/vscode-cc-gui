@@ -13,9 +13,35 @@ interface ContentBlock {
 // each backend flush batch without extra accumulation lag.
 export const THROTTLE_INTERVAL = 33;
 
-interface StreamingBlockBoundary {
+export interface StreamingBlockBoundary {
   contentLength: number;
   thinkingLength: number;
+}
+
+/**
+ * Clamp recorded block boundaries to shorter buffer lengths (stream rollback).
+ * A boundary inside both lengths stays unchanged. An offset past its buffer
+ * length is clamped to that length. Boundaries that become equal are merged,
+ * and the order is kept.
+ */
+export function clampStreamingBlockBoundaries(
+  boundaries: StreamingBlockBoundary[],
+  contentLength: number,
+  thinkingLength: number,
+): StreamingBlockBoundary[] {
+  const seen = new Set<string>();
+  const result: StreamingBlockBoundary[] = [];
+  for (const boundary of boundaries) {
+    const clamped: StreamingBlockBoundary = {
+      contentLength: Math.min(boundary.contentLength, contentLength),
+      thinkingLength: Math.min(boundary.thinkingLength, thinkingLength),
+    };
+    const key = `${clamped.contentLength}:${clamped.thinkingLength}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(clamped);
+  }
+  return result;
 }
 
 interface UseStreamingMessagesReturn {
@@ -40,6 +66,7 @@ interface UseStreamingMessagesReturn {
   turnIdCounterRef: React.MutableRefObject<number>;
   recordStreamingBlockReset: () => void;
   clearStreamingBlockResets: () => void;
+  rollbackStreamingBuffers: (contentChars: number, thinkingChars: number) => void;
 
   // Helper functions
   findLastAssistantIndex: (list: ClaudeMessage[]) => number;
@@ -87,8 +114,59 @@ export function useStreamingMessages(): UseStreamingMessagesReturn {
     });
   };
 
+  // Stream rollback bookkeeping (API retry). Each rollback increments the
+  // epoch. patchAssistantForStreaming stamps the epoch on the message that it
+  // trimmed, so the trim runs one time per message and per rollback.
+  // The floor is the shortest buffer length that a rollback produced in this
+  // stream. Rendered text past the floor can be from a failed attempt; text
+  // before it is always valid. New deltas can arrive before the next render,
+  // so the trim uses the floor and not the current buffer length.
+  const rollbackEpochRef = useRef(0);
+  const rollbackFloorRef = useRef<StreamingBlockBoundary | null>(null);
+
   const clearStreamingBlockResets = (): void => {
     streamingBlockBoundariesRef.current = [];
+    rollbackFloorRef.current = null;
+  };
+
+  /**
+   * Remove the last `contentChars` / `thinkingChars` characters from the
+   * cumulative streaming buffers. The backend sends this when the API stream
+   * failed and Claude Code streams the answer again from the start, so the
+   * failed attempt's partial text must not stay in front of the new answer.
+   *
+   * Block boundaries and the trailing structural boundary are clamped to the
+   * new buffer lengths; boundaries that become equal are merged.
+   */
+  const rollbackStreamingBuffers = (contentChars: number, thinkingChars: number): void => {
+    const contentDrop = Math.max(0, Math.floor(Number(contentChars) || 0));
+    const thinkingDrop = Math.max(0, Math.floor(Number(thinkingChars) || 0));
+    if (contentDrop === 0 && thinkingDrop === 0) return;
+
+    const content = streamingContentRef.current || '';
+    const thinking = streamingThinkingRef.current || '';
+    const contentLength = Math.max(0, content.length - contentDrop);
+    const thinkingLength = Math.max(0, thinking.length - thinkingDrop);
+    streamingContentRef.current = content.slice(0, contentLength);
+    streamingThinkingRef.current = thinking.slice(0, thinkingLength);
+
+    streamingBlockBoundariesRef.current = clampStreamingBlockBoundaries(
+      streamingBlockBoundariesRef.current,
+      contentLength,
+      thinkingLength,
+    );
+
+    const structuralBoundary = trailingStructuralTextBoundaryRef.current;
+    if (structuralBoundary && structuralBoundary.textLength > contentLength) {
+      trailingStructuralTextBoundaryRef.current = { ...structuralBoundary, textLength: contentLength };
+    }
+
+    const floor = rollbackFloorRef.current;
+    rollbackFloorRef.current = {
+      contentLength: floor ? Math.min(floor.contentLength, contentLength) : contentLength,
+      thinkingLength: floor ? Math.min(floor.thinkingLength, thinkingLength) : thinkingLength,
+    };
+    rollbackEpochRef.current += 1;
   };
 
   const getBlockText = (block: ContentBlock, kind: 'text' | 'thinking'): string => {
@@ -182,6 +260,40 @@ export function useStreamingMessages(): UseStreamingMessagesReturn {
     }
 
     return nextBlocks;
+  };
+
+  // After a rollback, the rendered raw blocks can still hold the failed
+  // attempt's text. The sync helpers only extend or replace the LAST block, so
+  // first cut the same-kind blocks (in order) to the rollback floor and drop
+  // the blocks that are fully past it. Structural blocks stay unchanged. The
+  // materialize / sync helpers then fill the rest from the buffer again.
+  const trimStreamingBlocksToLength = (
+    blocks: ContentBlock[],
+    kind: 'text' | 'thinking',
+    maxLength: number,
+  ): ContentBlock[] => {
+    let remaining = maxLength;
+    let changed = false;
+    const nextBlocks: ContentBlock[] = [];
+    for (const block of blocks) {
+      if (block?.type !== kind) {
+        nextBlocks.push(block);
+        continue;
+      }
+      const text = getBlockText(block, kind);
+      if (text.length <= remaining) {
+        remaining -= text.length;
+        nextBlocks.push(block);
+        continue;
+      }
+      changed = true;
+      if (remaining > 0) {
+        const cut = text.slice(0, remaining);
+        nextBlocks.push(kind === 'thinking' ? { ...block, thinking: cut, text: cut } : { ...block, text: cut });
+        remaining = 0;
+      }
+    }
+    return changed ? nextBlocks : blocks;
   };
 
   // Helper: Find last assistant message index
@@ -413,9 +525,19 @@ export function useStreamingMessages(): UseStreamingMessagesReturn {
   // (backend snapshot). This prevents content from "jumping back" when updateMessages
   // arrives before the delta throttler flushes.
   const patchAssistantForStreaming = (assistant: ClaudeMessage): ClaudeMessage => {
+    const rollbackEpoch = rollbackEpochRef.current;
+    // A stream rollback (API retry) made the buffers shorter on purpose. The
+    // message still holds the failed attempt's text, so the buffers are the
+    // source of truth one time, even when the message text is longer.
+    const rollbackFloor = rollbackFloorRef.current;
+    const applyRollback = rollbackFloor !== null
+      && assistant.__streamRollbackEpoch !== rollbackEpoch;
+
     const deltaContent = streamingContentRef.current || '';
     const backendContent = assistant.content || '';
-    const bestContent = deltaContent.length >= backendContent.length ? deltaContent : backendContent;
+    const bestContent = applyRollback || deltaContent.length >= backendContent.length
+      ? deltaContent
+      : backendContent;
 
     const deltaThinking = streamingThinkingRef.current || '';
     let patchedRaw = assistant.raw;
@@ -428,6 +550,10 @@ export function useStreamingMessages(): UseStreamingMessagesReturn {
         : Array.isArray(msg?.content) ? msg.content : [];
 
       let blocks = [...rawContent] as ContentBlock[];
+      if (applyRollback && rollbackFloor) {
+        blocks = trimStreamingBlocksToLength(blocks, 'thinking', rollbackFloor.thinkingLength);
+        blocks = trimStreamingBlocksToLength(blocks, 'text', rollbackFloor.contentLength);
+      }
       blocks = materializePendingStreamingBlocks(blocks, 'thinking', deltaThinking);
       blocks = materializePendingStreamingBlocks(blocks, 'text', bestContent);
       blocks = syncThinkingBlocksWithContent(blocks, deltaThinking);
@@ -450,6 +576,7 @@ export function useStreamingMessages(): UseStreamingMessagesReturn {
       content: bestContent,
       raw: patchedRaw,
       isStreaming: true,
+      ...(applyRollback ? { __streamRollbackEpoch: rollbackEpoch } : {}),
     } as ClaudeMessage;
   };
 
@@ -497,6 +624,7 @@ export function useStreamingMessages(): UseStreamingMessagesReturn {
     turnIdCounterRef,
     recordStreamingBlockReset,
     clearStreamingBlockResets,
+    rollbackStreamingBuffers,
 
     // Helper functions
     findLastAssistantIndex,

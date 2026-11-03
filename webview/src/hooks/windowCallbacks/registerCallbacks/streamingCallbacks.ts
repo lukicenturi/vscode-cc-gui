@@ -3,7 +3,7 @@
  *
  * Registers window bridge callbacks for streaming:
  * onStreamStart, onContentDelta, onThinkingDelta, onStreamEnd, onBlockReset,
- * onStreamingHeartbeat, onPermissionDenied, plus __flushDeferredStreamingRenders
+ * onStreamRollback, onStreamingHeartbeat, onPermissionDenied, plus __flushDeferredStreamingRenders
  * (called after a pending structural snapshot is applied to resume delta rendering).
  */
 
@@ -187,6 +187,7 @@ export function registerStreamingCallbacks(options: UseWindowCallbacksOptions): 
     streamingThinkingRef,
     recordStreamingBlockReset,
     clearStreamingBlockResets,
+    rollbackStreamingBuffers,
     isStreamingRef,
     useBackendStreamingRenderRef,
     autoExpandedThinkingKeysRef,
@@ -1193,5 +1194,39 @@ export function registerStreamingCallbacks(options: UseWindowCallbacksOptions): 
       return;
     }
     recordStreamingBlockReset?.();
+  };
+
+  // Stream rollback callback — the backend emits [STREAM_ROLLBACK] when the API
+  // stream failed mid-response and Claude Code retries the request. The retry
+  // streams the answer again from the start, so the failed attempt's characters
+  // are removed from the end of the cumulative buffers. Without this, the UI
+  // shows the same answer several times as growing prefixes.
+  //
+  // patchAssistantForStreaming treats the shorter buffers as the source of
+  // truth for the next render (it trims the rendered raw blocks one time), so
+  // the normal rAF render path is enough to show the truncated text.
+  window.onStreamRollback = (json: string) => {
+    if (!isStreamingRef.current) {
+      // Stream not active, ignore (could be stale signal after stream ended)
+      return;
+    }
+    let contentChars = 0;
+    let thinkingChars = 0;
+    try {
+      const parsed = JSON.parse(json) as { content?: unknown; thinking?: unknown };
+      contentChars = Number(parsed?.content) || 0;
+      thinkingChars = Number(parsed?.thinking) || 0;
+    } catch {
+      return;
+    }
+    if (contentChars <= 0 && thinkingChars <= 0) return;
+    window.__lastStreamActivityAt = Date.now();
+    rollbackStreamingBuffers?.(contentChars, thinkingChars);
+    if (window.__pendingUpdateRaf != null || window.__pendingUpdateJson != null) {
+      window.__streamingDeltaRenderDeferred = true;
+      return;
+    }
+    scheduleContentRaf();
+    scheduleThinkingRaf();
   };
 }

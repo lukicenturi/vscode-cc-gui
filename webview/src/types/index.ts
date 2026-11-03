@@ -91,6 +91,11 @@ export interface ClaudeMessage {
    * be merged. Undefined for history messages loaded from JSONL files.
    */
   __turnId?: number;
+  /**
+   * Internal: the stream rollback epoch (API retry) that was last applied to
+   * this streaming assistant message. See useStreamingMessages.
+   */
+  __streamRollbackEpoch?: number;
   [key: string]: unknown;
 }
 

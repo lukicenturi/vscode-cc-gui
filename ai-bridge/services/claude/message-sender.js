@@ -43,6 +43,12 @@ import {
   resetTurnBlockState,
   prepareAssistantSnapshotBlock,
 } from './stream-delta-normalizer.js';
+import {
+  emitStreamRollback,
+  processApiRetry,
+  writeContentDelta,
+  writeThinkingDelta,
+} from './stream-event-processor.js';
 import { generateSessionTitle } from '../session-title-service.js';
 import { getClaudeCliPathOverride } from '../../utils/claude-cli-path.js';
 
@@ -185,6 +191,14 @@ function processStreamMessage(msg, state, logPrefix) {
       // - message_delta: incremental output_tokens updates
       // - The accumulatedUsage represents the cumulative total across all turns in multi-turn tool use.
       if (event.type === 'message_start') {
+        // Previous message never closed: Claude Code restarted the request.
+        // Mirrors stream-event-processor.js (see emitStreamRollback there).
+        if (state.messageOpen) {
+          emitStreamRollback(state);
+        }
+        state.messageOpen = true;
+        state.emittedContentSinceMessageStart = 0;
+        state.emittedThinkingSinceMessageStart = 0;
         // Turn boundary: re-numbered content blocks. Clear the index-keyed block
         // maps so the prior turn's accumulator / locked stream-mode cannot corrupt
         // or duplicate this turn's index-0 block (see resetTurnBlockState). Mirrors
@@ -204,17 +218,23 @@ function processStreamMessage(msg, state, logPrefix) {
         state.accumulatedUsage = mergeUsage(state.accumulatedUsage, event.usage);
         emitAccumulatedUsage(state.accumulatedUsage);
       }
+      if (event.type === 'message_stop' || (event.type === 'message_delta' && event.delta?.stop_reason)) {
+        // A complete message is final: a later retry must not roll it back.
+        state.messageOpen = false;
+        state.emittedContentSinceMessageStart = 0;
+        state.emittedThinkingSinceMessageStart = 0;
+      }
       if (event.type === 'content_block_delta' && event.delta) {
         if (event.delta.type === 'text_delta' && event.delta.text) {
           const delta = normalizeStreamDelta(state, 'text', event.index, event.delta.text);
           if (delta) {
-            process.stdout.write(`[CONTENT_DELTA] ${JSON.stringify(delta)}\n`);
+            writeContentDelta(state, delta);
             state.lastAssistantContent += delta;
           }
         } else if (event.delta.type === 'thinking_delta' && event.delta.thinking) {
           const delta = normalizeStreamDelta(state, 'thinking', event.index, event.delta.thinking);
           if (delta) {
-            process.stdout.write(`[THINKING_DELTA] ${JSON.stringify(delta)}\n`);
+            writeThinkingDelta(state, delta);
             state.lastThinkingContent += delta;
           }
         }
@@ -231,6 +251,16 @@ function processStreamMessage(msg, state, logPrefix) {
       }
     }
     return;
+  }
+
+  // API retry: roll back the failed attempt's streamed text before the
+  // regenerated answer streams in. Mirrors persistent-query-service.js.
+  processApiRetry(msg, state);
+
+  // An assistant message closes the current message attempt, so the next
+  // message_start of a tool-use loop does not roll back.
+  if (msg.type === 'assistant') {
+    state.messageOpen = false;
   }
 
   // Assistant messages can represent one normalized content block rather than
@@ -330,7 +360,7 @@ function emitTextDelta(currentText, state, blockIndex = 0) {
   //   - hasStreamEvents && !hadPrevious: stream will deliver this block, suppress
   const { delta, hadPrevious } = resolveSnapshotDelta(state, 'text', blockIndex, currentText);
   if (delta && (!state.hasStreamEvents || hadPrevious)) {
-    process.stdout.write(`[CONTENT_DELTA] ${JSON.stringify(delta)}\n`);
+    writeContentDelta(state, delta);
   }
   state.lastAssistantContent = currentText;
 }
@@ -343,7 +373,7 @@ function emitThinkingDelta(thinkingText, state, blockIndex = 0) {
   }
   const { delta, hadPrevious } = resolveSnapshotDelta(state, 'thinking', blockIndex, thinkingText);
   if (delta && (!state.hasStreamEvents || hadPrevious)) {
-    process.stdout.write(`[THINKING_DELTA] ${JSON.stringify(delta)}\n`);
+    writeThinkingDelta(state, delta);
   }
   state.lastThinkingContent = thinkingText;
 }
@@ -360,6 +390,7 @@ async function executeWithRetry({ createQueryResult, streamingEnabled, resumeSes
     const state = {
       currentSessionId: resumeSessionId, lastEmittedSessionId: null, messageCount: 0, hasStreamEvents: false,
       lastAssistantContent: '', lastThinkingContent: '', accumulatedUsage: null,
+      emittedContentSinceMessageStart: 0, emittedThinkingSinceMessageStart: 0, messageOpen: false,
       streamingEnabled, streamStarted: outerStreamState.streamStarted,
       streamEnded: outerStreamState.streamEnded, queryResult: null
     };

@@ -3,6 +3,8 @@ import { useWindowCallbacks } from './useWindowCallbacks.js';
 import type { UseWindowCallbacksOptions } from './useWindowCallbacks.js';
 import type { ClaudeMessage } from '../types/index.js';
 import { forceWebviewRepaint } from '../utils/forceWebviewRepaint.js';
+import { useStreamingMessages } from './useStreamingMessages.js';
+import { getContentBlocks, normalizeBlocks } from '../utils/messageUtils.js';
 
 // Mock the repaint util so we can assert the session-transition path triggers it
 // without touching the real DOM (there is no #app element under jsdom).
@@ -1920,6 +1922,161 @@ describe('useWindowCallbacks integration', () => {
         .filter((b) => b.type === 'tool_use' && b.name === 'bash');
       expect(toolUses).toHaveLength(1);
       expect(toolUses[0].id).toBe('live-id');
+    });
+  });
+
+  // ===== onStreamRollback (API retry discards the failed attempt) =====
+
+  describe('onStreamRollback', () => {
+    /**
+     * Wire the REAL useStreamingMessages hook into the callbacks, with a
+     * setMessages that applies updaters to a shared buffer, and a manual rAF
+     * queue so that each render can be flushed on demand.
+     */
+    const setupStreaming = () => {
+      const rafQueue: FrameRequestCallback[] = [];
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        rafQueue.push(callback);
+        return rafQueue.length;
+      });
+      vi.stubGlobal('cancelAnimationFrame', vi.fn());
+      // Step the clock on each read so the 33 ms render throttle never defers.
+      let now = 1_000_000;
+      vi.spyOn(Date, 'now').mockImplementation(() => (now += 1000));
+
+      const { result: streaming } = renderHook(() => useStreamingMessages());
+      const hook = streaming.current;
+      const buffer = { current: [] as ClaudeMessage[] };
+      const setMessages = vi.fn((value: unknown) => {
+        buffer.current = typeof value === 'function'
+          ? (value as (prev: ClaudeMessage[]) => ClaudeMessage[])(buffer.current)
+          : value as ClaudeMessage[];
+      });
+      const opts = createOptions({
+        setMessages: setMessages as unknown as UseWindowCallbacksOptions['setMessages'],
+        streamingContentRef: hook.streamingContentRef,
+        streamingThinkingRef: hook.streamingThinkingRef,
+        recordStreamingBlockReset: hook.recordStreamingBlockReset,
+        clearStreamingBlockResets: hook.clearStreamingBlockResets,
+        rollbackStreamingBuffers: hook.rollbackStreamingBuffers,
+        isStreamingRef: hook.isStreamingRef,
+        useBackendStreamingRenderRef: hook.useBackendStreamingRenderRef,
+        autoExpandedThinkingKeysRef: hook.autoExpandedThinkingKeysRef,
+        streamingMessageIndexRef: hook.streamingMessageIndexRef,
+        streamingTurnIdRef: hook.streamingTurnIdRef,
+        turnIdCounterRef: hook.turnIdCounterRef,
+        lastContentUpdateRef: hook.lastContentUpdateRef,
+        contentUpdateTimeoutRef: hook.contentUpdateTimeoutRef,
+        lastThinkingUpdateRef: hook.lastThinkingUpdateRef,
+        thinkingUpdateTimeoutRef: hook.thinkingUpdateTimeoutRef,
+        findLastAssistantIndex: hook.findLastAssistantIndex,
+        extractRawBlocks: hook.extractRawBlocks,
+        getOrCreateStreamingAssistantIndex: hook.getOrCreateStreamingAssistantIndex,
+        patchAssistantForStreaming: hook.patchAssistantForStreaming,
+      });
+      renderHook(() => useWindowCallbacks(opts));
+
+      const flushRaf = () => {
+        while (rafQueue.length > 0) {
+          rafQueue.shift()!(0);
+        }
+      };
+      const renderedText = (): string => {
+        const assistant = buffer.current.filter((m) => m.type === 'assistant').pop();
+        if (!assistant) return '';
+        return getContentBlocks(
+          assistant,
+          (raw) => normalizeBlocks(raw, (text: string) => text, t),
+          (text: string) => text,
+        )
+          .filter((block) => block.type === 'text')
+          .map((block) => (block as { text?: string }).text ?? '')
+          .join('');
+      };
+      return { hook, buffer, flushRaf, renderedText };
+    };
+
+    afterEach(() => {
+      if (window.__stallWatchdogInterval != null) {
+        clearInterval(window.__stallWatchdogInterval);
+        window.__stallWatchdogInterval = null;
+      }
+      window.__streamHardStopped = false;
+      vi.restoreAllMocks();
+    });
+
+    it('discards the failed attempt so the retried answer renders exactly once', () => {
+      const { hook, buffer, flushRaf, renderedText } = setupStreaming();
+
+      act(() => { window.onStreamStart!(); });
+
+      // Failed attempt: partial answer, then a later block starts.
+      act(() => {
+        window.onContentDelta!('Done. The fix');
+        flushRaf();
+        window.onContentDelta!('**What was wro');
+        flushRaf();
+        window.onBlockReset!();
+      });
+      expect(renderedText()).toBe('Done. The fix**What was wro');
+
+      // api_retry: the daemon rolls back every character of the attempt.
+      act(() => {
+        window.onStreamRollback!(JSON.stringify({ content: 'Done. The fix**What was wro'.length, thinking: 0 }));
+        flushRaf();
+      });
+      expect(hook.streamingContentRef.current).toBe('');
+      expect(renderedText()).toBe('');
+
+      // Retry: message_start (BLOCK_RESET), then the answer from the start.
+      act(() => {
+        window.onBlockReset!();
+        window.onContentDelta!('Done. The fix');
+        flushRaf();
+        window.onContentDelta!(' is implemented');
+        flushRaf();
+      });
+
+      const assistant = buffer.current.filter((m) => m.type === 'assistant').pop()!;
+      expect(assistant.content).toBe('Done. The fix is implemented');
+      expect(renderedText()).toBe('Done. The fix is implemented');
+    });
+
+    it('renders the retried text correctly when retry deltas arrive before the render', () => {
+      const { buffer, flushRaf, renderedText } = setupStreaming();
+
+      act(() => { window.onStreamStart!(); });
+      act(() => {
+        window.onThinkingDelta!('Plan it');
+        window.onContentDelta!('Old partial answer');
+        flushRaf();
+      });
+
+      act(() => {
+        window.onStreamRollback!(JSON.stringify({ content: 'Old partial answer'.length, thinking: 'Plan it'.length }));
+        // No flush here: the retried stream arrives in the same frame.
+        window.onBlockReset!();
+        window.onThinkingDelta!('Plan again');
+        window.onContentDelta!('New full answer!!!');
+        flushRaf();
+      });
+
+      const assistant = buffer.current.filter((m) => m.type === 'assistant').pop()!;
+      expect(assistant.content).toBe('New full answer!!!');
+      expect(renderedText()).toBe('New full answer!!!');
+      const thinking = ((assistant.raw as any)?.message?.content ?? [])
+        .filter((block: { type: string }) => block.type === 'thinking')
+        .map((block: { thinking: string }) => block.thinking);
+      expect(thinking).toEqual(['Plan again']);
+    });
+
+    it('is ignored when the stream is not active', () => {
+      const { hook } = setupStreaming();
+      hook.streamingContentRef.current = 'Stale';
+      act(() => {
+        window.onStreamRollback!(JSON.stringify({ content: 5, thinking: 0 }));
+      });
+      expect(hook.streamingContentRef.current).toBe('Stale');
     });
   });
 });
