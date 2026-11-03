@@ -16,6 +16,14 @@ Run **CC GUI: Start Remote Control (Phone)** from the Command Palette, or click 
 
 ---
 
+## Keep the fork up to date with upstream
+
+```bash
+scripts/sync-upstream.sh
+```
+
+The script fetches `upstream/main`, merges it, sets the fork version to one major above upstream (so the Marketplace release never replaces the fork), rebuilds, packages the VSIX and installs it. Add `--no-install` to only package.
+
 ## Build and Package the VSIX
 
 From the project root:

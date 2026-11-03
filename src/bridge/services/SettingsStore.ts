@@ -246,10 +246,17 @@ export class SettingsStore {
   }
 
   getUiFontConfig(): FontConfig {
-    return {
-      ...this.getResolvedFontConfig('ccg.ui_font_config', { appendSansFallback: true }),
-      presets: this.getClaudeAppFontPresets(),
-    };
+    const presets = this.getClaudeAppFontPresets();
+    const key = 'ccg.ui_font_config';
+    // Fork default: when the user never chose a UI font and the Claude desktop
+    // app is installed, use its Anthropic Sans font. The choice is not saved,
+    // so a later selection in Settings still wins.
+    const stored = this.state.get<Partial<FontConfig> | undefined>(key, undefined);
+    const claudeSans = presets.find((preset) => preset.id === 'claudeSans');
+    const config = !stored && claudeSans
+      ? this.getResolvedFontConfig(key, { appendSansFallback: true }, { mode: 'customFile', customFontPath: claudeSans.path })
+      : this.getResolvedFontConfig(key, { appendSansFallback: true });
+    return { ...config, presets };
   }
 
   /** The Claude desktop app fonts that exist on this computer. */
@@ -540,8 +547,12 @@ export class SettingsStore {
     );
   }
 
-  private getResolvedFontConfig(key: string, options: { appendSansFallback: boolean }): FontConfig {
-    const stored = this.state.get<Partial<FontConfig>>(key, { mode: 'followEditor' });
+  private getResolvedFontConfig(
+    key: string,
+    options: { appendSansFallback: boolean },
+    override?: Partial<FontConfig>,
+  ): FontConfig {
+    const stored = override ?? this.state.get<Partial<FontConfig>>(key, { mode: 'followEditor' });
     const editor = this.getEditorFontConfig();
     const mode: FontMode = stored.mode === 'customFile' ? 'customFile' : 'followEditor';
     const fallbackFonts = options.appendSansFallback
