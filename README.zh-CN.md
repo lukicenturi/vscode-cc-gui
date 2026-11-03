@@ -12,7 +12,7 @@
 
 ### 远程控制（手机）
 
-在命令面板中运行 **CC GUI: 启动远程控制（手机）**，或点击 CC GUI 视图标题栏中的手机图标。选择文件夹并输入会话名称后，插件会在该文件夹的新 VS Code 终端中运行 `claude --remote-control <名称>`。在手机上打开 Claude App，进入 **Code** 并选择该会话，即可与该文件夹对话。在 macOS 上，命令会通过 `caffeinate -i` 运行，防止 Mac 睡眠（设置项 `ccGui.remoteControl.keepAwake`）。会话由 Claude Code CLI 保存，因此也会显示在该工作区的 CC GUI 历史记录视图中。
+在命令面板中运行 **CC GUI: 启动远程控制（手机）**，或点击 CC GUI 视图标题栏中的手机图标。选择文件夹并输入会话名称后，插件会在该文件夹的新 VS Code 终端中运行 `claude remote-control --name <名称>`。在手机上打开 Claude App，进入 **Code** 并选择该会话，即可与该文件夹对话。在 macOS 上，命令会通过 `caffeinate -i` 运行，防止 Mac 睡眠（设置项 `ccGui.remoteControl.keepAwake`）。会话由 Claude Code CLI 保存，因此也会显示在该工作区的 CC GUI 历史记录视图中。
 
 ---
 

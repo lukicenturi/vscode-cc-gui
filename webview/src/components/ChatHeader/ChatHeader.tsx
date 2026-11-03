@@ -178,6 +178,16 @@ export function ChatHeader({
       <div className="header-right">
         {currentView === 'chat' && (
           <>
+            {onRemoteControl && (
+              <button
+                className="icon-button"
+                onClick={onRemoteControl}
+                data-tooltip={t('common.remoteControl')}
+                aria-label={t('common.remoteControl')}
+              >
+                <span className="codicon codicon-device-mobile" />
+              </button>
+            )}
             {onOpenSearch && (
               <button
                 className="icon-button"
@@ -205,16 +215,6 @@ export function ChatHeader({
             >
               <span className="codicon codicon-history" />
             </button>
-            {onRemoteControl && (
-              <button
-                className="icon-button"
-                onClick={onRemoteControl}
-                data-tooltip={t('common.remoteControl')}
-                aria-label={t('common.remoteControl')}
-              >
-                <span className="codicon codicon-device-mobile" />
-              </button>
-            )}
             <button
               className="icon-button"
               onClick={onSettings}

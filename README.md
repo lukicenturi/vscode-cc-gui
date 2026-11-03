@@ -12,7 +12,7 @@
 
 ### Remote Control (phone)
 
-Run **CC GUI: Start Remote Control (Phone)** from the Command Palette, or click the phone icon in the CC GUI view title bar. Select a folder, then enter a session name. The extension starts `claude --remote-control <name>` in a new VS Code terminal in that folder. Open the Claude app on your phone, go to **Code**, and select the session to chat with that folder. On macOS, the command runs inside `caffeinate -i` so that the Mac does not sleep (setting `ccGui.remoteControl.keepAwake`). The session is stored by the Claude Code CLI, so it also shows in the CC GUI History view of that workspace.
+Run **CC GUI: Start Remote Control (Phone)** from the Command Palette, or click the phone icon in the CC GUI view title bar. Select a folder, then enter a session name. The extension starts `claude remote-control --name <name>` in a new VS Code terminal in that folder. Open the Claude app on your phone, go to **Code**, and select the session to chat with that folder. On macOS, the command runs inside `caffeinate -i` so that the Mac does not sleep (setting `ccGui.remoteControl.keepAwake`). The session is stored by the Claude Code CLI, so it also shows in the CC GUI History view of that workspace.
 
 ---
 

@@ -59,8 +59,15 @@ export function buildRemoteControlCommand(options: RemoteControlCommandOptions):
   const claudePath = options.claudePath?.trim() || DEFAULT_CLAUDE_PATH;
   const parts = [
     formatExecutable(claudePath, options.platform),
-    '--remote-control',
+    // The `remote-control` subcommand starts the persistent server (spawn
+    // mode). The Claude phone app lists it as a device and can start new
+    // sessions in the folder. The older `--remote-control` flag only
+    // registers one interactive session, which the phone does not list.
+    'remote-control',
+    '--name',
     quoteArg(options.sessionName, options.platform),
+    '--spawn',
+    'same-dir',
   ];
   const extraArgs = options.extraArgs?.trim();
   if (extraArgs) {

@@ -14,39 +14,39 @@ describe('buildRemoteControlCommand', () => {
   it('wraps the command in caffeinate on macOS when keepAwake is on', () => {
     assert.equal(
       buildRemoteControlCommand({ sessionName: 'My Project', keepAwake: true, platform: 'darwin' }),
-      "caffeinate -i claude --remote-control 'My Project'"
+      "caffeinate -i claude remote-control --name 'My Project' --spawn same-dir"
     );
   });
 
   it('does not use caffeinate on macOS when keepAwake is off', () => {
     assert.equal(
       buildRemoteControlCommand({ sessionName: 'My Project', keepAwake: false, platform: 'darwin' }),
-      "claude --remote-control 'My Project'"
+      "claude remote-control --name 'My Project' --spawn same-dir"
     );
   });
 
   it('ignores keepAwake on Linux and Windows', () => {
     assert.equal(
       buildRemoteControlCommand({ sessionName: 'app', keepAwake: true, platform: 'linux' }),
-      "claude --remote-control 'app'"
+      "claude remote-control --name 'app' --spawn same-dir"
     );
     assert.equal(
       buildRemoteControlCommand({ sessionName: 'My App', keepAwake: true, platform: 'win32' }),
-      'claude --remote-control "My App"'
+      'claude remote-control --name "My App" --spawn same-dir'
     );
   });
 
   it('escapes a single quote in the session name on POSIX', () => {
     assert.equal(
       buildRemoteControlCommand({ sessionName: "Bob's repo", keepAwake: false, platform: 'linux' }),
-      "claude --remote-control 'Bob'\\''s repo'"
+      "claude remote-control --name 'Bob'\\''s repo' --spawn same-dir"
     );
   });
 
   it('keeps shell metacharacters literal inside single quotes', () => {
     assert.equal(
       buildRemoteControlCommand({ sessionName: 'a $(rm -rf) `x` ; b', keepAwake: false, platform: 'darwin' }),
-      "claude --remote-control 'a $(rm -rf) `x` ; b'"
+      "claude remote-control --name 'a $(rm -rf) `x` ; b' --spawn same-dir"
     );
   });
 
@@ -58,14 +58,14 @@ describe('buildRemoteControlCommand', () => {
         platform: 'darwin',
         extraArgs: '  --permission-mode acceptEdits ',
       }),
-      "caffeinate -i claude --remote-control 'web' --permission-mode acceptEdits"
+      "caffeinate -i claude remote-control --name 'web' --spawn same-dir --permission-mode acceptEdits"
     );
   });
 
   it('ignores empty extraArgs', () => {
     assert.equal(
       buildRemoteControlCommand({ sessionName: 'web', keepAwake: false, platform: 'linux', extraArgs: '   ' }),
-      "claude --remote-control 'web'"
+      "claude remote-control --name 'web' --spawn same-dir"
     );
   });
 
@@ -77,7 +77,7 @@ describe('buildRemoteControlCommand', () => {
         keepAwake: false,
         platform: 'darwin',
       }),
-      "/opt/homebrew/bin/claude --remote-control 'web'"
+      "/opt/homebrew/bin/claude remote-control --name 'web' --spawn same-dir"
     );
     assert.equal(
       buildRemoteControlCommand({
@@ -86,7 +86,7 @@ describe('buildRemoteControlCommand', () => {
         keepAwake: false,
         platform: 'linux',
       }),
-      "'/Users/x/My Tools/claude' --remote-control 'web'"
+      "'/Users/x/My Tools/claude' remote-control --name 'web' --spawn same-dir"
     );
     assert.equal(
       buildRemoteControlCommand({
@@ -95,14 +95,14 @@ describe('buildRemoteControlCommand', () => {
         keepAwake: false,
         platform: 'win32',
       }),
-      '"C:\\Program Files\\claude\\claude.exe" --remote-control "web"'
+      '"C:\\Program Files\\claude\\claude.exe" remote-control --name "web" --spawn same-dir'
     );
   });
 
   it('falls back to "claude" when claudePath is empty', () => {
     assert.equal(
       buildRemoteControlCommand({ claudePath: '  ', sessionName: 'web', keepAwake: false, platform: 'linux' }),
-      "claude --remote-control 'web'"
+      "claude remote-control --name 'web' --spawn same-dir"
     );
   });
 });
