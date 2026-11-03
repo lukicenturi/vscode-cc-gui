@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import type { TriggerQuery, DropdownPosition } from '../types';
 import { getVirtualCursorPosition } from '../utils/virtualCursorUtils.js';
+import { getAtomicTagTextLength } from '../utils/quoteTag.js';
 
 /**
  * Helper function: check if text ends with a newline character
@@ -13,6 +14,7 @@ function textEndsWithNewline(text: string | null): boolean {
  * Get screen coordinates at a given character offset
  * Note: Must be consistent with the text format returned by getTextContent
  * File tags are converted to @filepath format, requiring virtual length calculation
+ * Quote chips are converted to their markdown block quote text
  */
 export function getRectAtCharOffset(
   element: HTMLElement,
@@ -77,9 +79,10 @@ export function getRectAtCharOffset(
       }
 
       // If it's a file tag, calculate its virtual length (@ + filepath)
-      if (el.classList.contains('file-tag')) {
-        const filePath = el.getAttribute('data-file-path') || '';
-        const tagLength = filePath.length + 1; // @ + filepath
+      // File tag (@ + filepath) or quote chip (markdown block quote text)
+      const atomicTagLength = getAtomicTagTextLength(el);
+      if (atomicTagLength !== null) {
+        const tagLength = atomicTagLength;
 
         if (position + tagLength >= charOffset) {
           // Target position is inside file tag, return tag end position
@@ -147,7 +150,8 @@ export function getRectAtCharOffset(
 }
 
 /**
- * Check if a text position is inside a file tag
+ * Check if a text position is inside a file tag or a quote chip
+ * (an @ in quoted text must not open the file completion)
  * @param element - contenteditable element
  * @param textPosition - text position (virtual position based on getTextContent)
  * @returns whether the position is inside a file tag
@@ -202,9 +206,10 @@ function isPositionInFileTag(element: HTMLElement, textPosition: number): boolea
       }
 
       // If it's a file tag, calculate its virtual length (@ + filepath)
-      if (el.classList.contains('file-tag')) {
-        const filePath = el.getAttribute('data-file-path') || '';
-        const tagLength = filePath.length + 1; // @ + filepath
+      // File tag (@ + filepath) or quote chip (markdown block quote text)
+      const atomicTagLength = getAtomicTagTextLength(el);
+      if (atomicTagLength !== null) {
+        const tagLength = atomicTagLength;
 
         if (position <= textPosition && textPosition < position + tagLength) {
           // Target position is inside the file tag

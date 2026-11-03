@@ -1,5 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { useFileTags } from './useFileTags.js';
+import { extractEditableText } from './useTextContent.js';
+import { createQuoteTagElement } from '../utils/quoteTag.js';
 
 function createEditable() {
   const el = document.createElement('div');
@@ -235,5 +237,47 @@ describe('useFileTags', () => {
     ]);
     expect(editable.textContent).toContain('1414');
   });
-});
 
+  it('keeps quote chips when it renders file tags', () => {
+    const editable = createEditable();
+    const chip = createQuoteTagElement('see @src/a.ts here')!;
+    editable.appendChild(chip);
+    editable.appendChild(document.createElement('br'));
+    editable.appendChild(document.createElement('br'));
+    editable.appendChild(document.createTextNode('@src/a.ts and more'));
+    mockSelection();
+
+    const { result } = renderHook(() =>
+      useFileTags({
+        editableRef: { current: editable },
+        getTextContent: () => extractEditableText(editable),
+        onCloseCompletions: vi.fn(),
+      })
+    );
+    result.current.pathMappingRef.current.set('src/a.ts', '/abs/src/a.ts');
+    const before = extractEditableText(editable);
+    result.current.renderFileTags();
+
+    const chips = editable.querySelectorAll('.quote-tag');
+    expect(chips.length).toBe(1);
+    expect(chips[0].getAttribute('data-quote')).toBe('see @src/a.ts here');
+    // The @ reference inside the quote is not a file tag; the typed one is.
+    expect(editable.querySelectorAll('.file-tag').length).toBe(1);
+    expect(extractEditableText(editable)).toBe(before);
+  });
+
+  it('removes a quote chip with its close button', () => {
+    const editable = createEditable();
+    editable.appendChild(createQuoteTagElement('quoted')!);
+    editable.appendChild(document.createElement('br'));
+    editable.appendChild(document.createElement('br'));
+    setupHook(editable);
+    const onInput = vi.fn();
+    editable.addEventListener('input', onInput);
+
+    (editable.querySelector('.quote-tag-close') as HTMLElement).click();
+
+    expect(editable.childNodes.length).toBe(0);
+    expect(onInput).toHaveBeenCalledTimes(1);
+  });
+});

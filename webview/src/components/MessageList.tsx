@@ -156,7 +156,14 @@ export const MessageList = memo(forwardRef<MessageListRevealHandle, MessageListP
               label: t('contextMenu.quote', 'Quote'),
               action: () => {
                 const quote = formatQuote(ctxMenu.selectedText);
-                if (quote) window.insertTextIntoChatInput?.(quote);
+                if (!quote) return;
+                // Show the quote as a chip in the input. The sent text has the
+                // same markdown block quote. Older inputs get the plain text.
+                if (window.insertQuoteIntoChatInput) {
+                  window.insertQuoteIntoChatInput(ctxMenu.selectedText);
+                } else {
+                  window.insertTextIntoChatInput?.(quote);
+                }
               },
             },
           ]}

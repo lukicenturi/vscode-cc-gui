@@ -1,5 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { useGlobalCallbacks } from './useGlobalCallbacks.js';
+import { useFileTags } from './useFileTags.js';
+import { extractEditableText } from './useTextContent.js';
 
 function createEditable(): HTMLDivElement {
   const el = document.createElement('div');
@@ -48,7 +50,10 @@ function placeCaretInsideFirstTextNode(element: HTMLDivElement, offset: number):
   selection?.addRange(range);
 }
 
-function renderUseGlobalCallbacks(editable: HTMLDivElement) {
+function renderUseGlobalCallbacks(
+  editable: HTMLDivElement,
+  getTextContent: () => string = () => readEditableText(editable)
+) {
   const pathMappingRef = { current: new Map<string, string>() };
   const setHasContent = vi.fn();
   const adjustHeight = vi.fn();
@@ -56,7 +61,6 @@ function renderUseGlobalCallbacks(editable: HTMLDivElement) {
   const onInput = vi.fn();
   const closeAllCompletions = vi.fn();
   const focusInput = vi.fn(() => editable.focus());
-  const getTextContent = () => readEditableText(editable);
 
   renderHook(() =>
     useGlobalCallbacks({
@@ -92,6 +96,7 @@ describe('useGlobalCallbacks', () => {
     vi.useRealTimers();
     delete window.insertCodeSnippetAtCursor;
     delete window.insertTextIntoChatInput;
+    delete window.insertQuoteIntoChatInput;
     delete window.handleFilePathFromJava;
     document.body.innerHTML = '';
   });
@@ -322,6 +327,113 @@ describe('useGlobalCallbacks', () => {
 
       expect(editable.childNodes.length).toBe(0);
       expect(onInput).not.toHaveBeenCalled();
+    });
+  });
+  describe('insertQuoteIntoChatInput', () => {
+    function caretIsAtEnd(editable: HTMLDivElement): boolean {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return false;
+      const range = selection.getRangeAt(0);
+      const endRange = document.createRange();
+      endRange.selectNodeContents(editable);
+      endRange.collapse(false);
+      return range.collapsed && range.compareBoundaryPoints(Range.START_TO_START, endRange) === 0;
+    }
+
+    function renderWithChipText(editable: HTMLDivElement) {
+      return renderUseGlobalCallbacks(editable, () => extractEditableText(editable));
+    }
+
+    it('inserts a quote chip that holds the raw text and updates state', () => {
+      const editable = createEditable();
+      const { getTextContent, setHasContent, adjustHeight, onInput } = renderWithChipText(editable);
+
+      window.insertQuoteIntoChatInput?.('line one\n\nline two');
+
+      const chip = editable.querySelector('.quote-tag') as HTMLElement;
+      expect(chip).not.toBeNull();
+      expect(chip.getAttribute('contenteditable')).toBe('false');
+      expect(chip.classList.contains('has-tooltip')).toBe(true);
+      expect(chip.getAttribute('data-quote')).toBe('line one\n\nline two');
+      expect(chip.getAttribute('data-tooltip')).toBe('line one\n\nline two');
+      expect(chip.querySelector('.quote-tag-text')?.textContent).toBe('\u201Cline one\u201D');
+      expect(chip.querySelector('.quote-tag-close')).not.toBeNull();
+
+      expect(getTextContent()).toBe('> line one\n>\n> line two\n\n');
+      expect(setHasContent).toHaveBeenCalledWith(true);
+      expect(adjustHeight).toHaveBeenCalled();
+      expect(onInput).toHaveBeenCalledWith('> line one\n>\n> line two\n\n');
+      expect(document.activeElement).toBe(editable);
+      expect(caretIsAtEnd(editable)).toBe(true);
+    });
+
+    it('appends typed text after the blank line that follows the quote', () => {
+      const editable = createEditable();
+      const { getTextContent } = renderWithChipText(editable);
+
+      window.insertQuoteIntoChatInput?.('line one\n\nline two');
+      editable.appendChild(document.createTextNode('my question'));
+
+      expect(getTextContent()).toBe('> line one\n>\n> line two\n\nmy question');
+    });
+
+    it('puts the chip on its own line after existing text', () => {
+      const editable = createEditable();
+      editable.appendChild(document.createTextNode('draft question'));
+      const { getTextContent } = renderWithChipText(editable);
+
+      window.insertQuoteIntoChatInput?.('quoted');
+
+      expect(getTextContent()).toBe('draft question\n> quoted\n\n');
+      expect(editable.childNodes[1].nodeName).toBe('BR');
+      expect((editable.childNodes[2] as HTMLElement).classList.contains('quote-tag')).toBe(true);
+    });
+
+    it('escapes the quoted text and cuts a long preview', () => {
+      const editable = createEditable();
+      renderWithChipText(editable);
+      const raw = '<b>"tag"</b> & a very long first line that goes on and on and on';
+
+      window.insertQuoteIntoChatInput?.(raw);
+
+      const chip = editable.querySelector('.quote-tag') as HTMLElement;
+      expect(chip.querySelector('b')).toBeNull();
+      expect(chip.getAttribute('data-quote')).toBe(raw);
+      const preview = chip.querySelector('.quote-tag-text')?.textContent ?? '';
+      expect(preview.startsWith('\u201C<b>"tag"</b>')).toBe(true);
+      expect(preview.endsWith('\u2026\u201D')).toBe(true);
+    });
+
+    it('ignores whitespace-only text', () => {
+      const editable = createEditable();
+      const { onInput } = renderWithChipText(editable);
+
+      window.insertQuoteIntoChatInput?.('  \n ');
+
+      expect(editable.childNodes.length).toBe(0);
+      expect(onInput).not.toHaveBeenCalled();
+    });
+
+    it('removes the chip and its line breaks when the close button is clicked', () => {
+      const editable = createEditable();
+      const { getTextContent } = renderWithChipText(editable);
+      renderHook(() =>
+        useFileTags({
+          editableRef: { current: editable },
+          getTextContent,
+          onCloseCompletions: vi.fn(),
+        })
+      );
+      const onInputEvent = vi.fn();
+      editable.addEventListener('input', onInputEvent);
+
+      window.insertQuoteIntoChatInput?.('quoted');
+      editable.appendChild(document.createTextNode('my question'));
+      (editable.querySelector('.quote-tag-close') as HTMLElement).click();
+
+      expect(editable.querySelector('.quote-tag')).toBeNull();
+      expect(getTextContent()).toBe('my question');
+      expect(onInputEvent).toHaveBeenCalled();
     });
   });
 });

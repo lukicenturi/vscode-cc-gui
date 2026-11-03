@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { createTextFragment } from '../utils/selectionUtils.js';
+import { createQuoteTagElement } from '../utils/quoteTag.js';
 import {
   parseExplicitFileReferences,
   registerAbsoluteFileReference,
@@ -367,6 +368,47 @@ export function useGlobalCallbacks({
       }
     };
 
+    // Append a quote of a message selection at the end of the input as a
+    // quote chip. The chip goes on its own line. 2 <br> elements follow it:
+    // the line break and the blank line that separate the quote from the
+    // text the user types next. getTextContent gives the chip as its markdown
+    // block quote, so the sent text is the same as formatQuote(rawText).
+    window.insertQuoteIntoChatInput = (rawText: string) => {
+      try {
+        if (!editableRef.current || !rawText) return;
+
+        const chip = createQuoteTagElement(rawText);
+        if (!chip) return;
+
+        editableRef.current.focus();
+
+        const existingText = getTextContent();
+        const needsLeadingBreak = !!existingText.trim() && !/\n\s*$/.test(existingText);
+        const fragment = document.createDocumentFragment();
+        if (needsLeadingBreak) {
+          fragment.appendChild(document.createElement('br'));
+        }
+        fragment.appendChild(chip);
+        fragment.appendChild(document.createElement('br'));
+        const lastBreak = document.createElement('br');
+        fragment.appendChild(lastBreak);
+
+        editableRef.current.appendChild(fragment);
+        moveCaretAfterNode(lastBreak);
+
+        // getTextContent compares the exact innerHTML snapshot, so the DOM
+        // change above already makes its cache stale.
+        const newText = getTextContent();
+        setHasContent(!!newText.trim());
+        adjustHeight();
+        onInput?.(newText);
+
+        editableRef.current.focus();
+      } catch (error) {
+        console.error('[useGlobalCallbacks] insertQuoteIntoChatInput failed:', error);
+      }
+    };
+
     window.focusChatInput = () => {
       focusInput();
     };
@@ -374,6 +416,7 @@ export function useGlobalCallbacks({
     return () => {
       delete window.insertCodeSnippetAtCursor;
       delete window.insertTextIntoChatInput;
+      delete window.insertQuoteIntoChatInput;
       delete window.focusChatInput;
     };
   }, [editableRef, pathMappingRef, getTextContent, renderFileTags, adjustHeight, onInput, setHasContent, focusInput]);

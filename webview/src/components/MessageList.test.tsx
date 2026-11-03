@@ -221,6 +221,7 @@ describe('MessageList context menu', () => {
     ctxMenuState.visible = false;
     ctxMenuState.selectedText = '';
     delete window.insertTextIntoChatInput;
+    delete window.insertQuoteIntoChatInput;
   });
 
   it('shows Copy and Quote items when the menu is open', () => {
@@ -231,7 +232,22 @@ describe('MessageList context menu', () => {
     expect(screen.getByText('contextMenu.quote')).toBeTruthy();
   });
 
-  it('inserts the selection as a markdown quote into the chat input', () => {
+  it('inserts the raw selection as a quote chip into the chat input', () => {
+    ctxMenuState.visible = true;
+    ctxMenuState.selectedText = 'line one\n\nline two';
+    const insertQuote = vi.fn();
+    const insertText = vi.fn();
+    window.insertQuoteIntoChatInput = insertQuote;
+    window.insertTextIntoChatInput = insertText;
+    renderList(makeMessages(2));
+
+    fireEvent.click(screen.getByText('contextMenu.quote'));
+
+    expect(insertQuote).toHaveBeenCalledWith('line one\n\nline two');
+    expect(insertText).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a markdown quote as text when the quote callback is missing', () => {
     ctxMenuState.visible = true;
     ctxMenuState.selectedText = 'line one\n\nline two';
     const insert = vi.fn();
@@ -247,11 +263,14 @@ describe('MessageList context menu', () => {
     ctxMenuState.visible = true;
     ctxMenuState.selectedText = '  \n ';
     const insert = vi.fn();
+    const insertQuote = vi.fn();
     window.insertTextIntoChatInput = insert;
+    window.insertQuoteIntoChatInput = insertQuote;
     renderList(makeMessages(2));
 
     fireEvent.click(screen.getByText('contextMenu.quote'));
 
     expect(insert).not.toHaveBeenCalled();
+    expect(insertQuote).not.toHaveBeenCalled();
   });
 });

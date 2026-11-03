@@ -209,6 +209,13 @@ interface Window {
   insertTextIntoChatInput?: (text: string) => void;
 
   /**
+   * Append a quote of the raw text at the end of the chat input as a quote chip
+   * and focus the input - registered by ChatInputBox. The sent text contains the
+   * quote as a markdown block quote.
+   */
+  insertQuoteIntoChatInput?: (rawText: string) => void;
+
+  /**
    * Focus the chat input box - registered by ChatInputBox
    */
   focusChatInput?: () => void;

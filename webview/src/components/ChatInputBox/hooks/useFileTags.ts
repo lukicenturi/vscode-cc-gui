@@ -13,6 +13,49 @@ import {
 } from '../utils/virtualCursorUtils.js';
 import { looksLikePathSegment } from '../../../utils/pathSegment.js';
 import type { FileTagInfo } from '../types.js';
+import {
+  isQuoteTag,
+  QUOTE_TAG_CLOSE_SELECTOR,
+  QUOTE_TAG_SELECTOR,
+} from '../utils/quoteTag.js';
+import { extractEditableText } from './useTextContent.js';
+
+/**
+ * Stands in for a quote chip in the text that renderFileTags rebuilds, so the
+ * chip element can be put back after the rebuild. A Unicode private use
+ * character does not occur in normal text.
+ */
+const QUOTE_PLACEHOLDER = '\uE000';
+
+/**
+ * Remove up to `max` line breaks directly after a node. A line break is a
+ * <br> element or a leading '\n' in a text node (renderFileTags rebuilds
+ * <br> elements as '\n' text).
+ */
+function removeLineBreaksAfter(node: Node, max: number): void {
+  let removed = 0;
+  while (removed < max) {
+    const next = node.nextSibling;
+    if (!next) return;
+    if (next.nodeType === Node.ELEMENT_NODE && (next as HTMLElement).tagName === 'BR') {
+      next.remove();
+      removed++;
+    } else if (next.nodeType === Node.TEXT_NODE) {
+      const text = next.textContent ?? '';
+      let count = 0;
+      while (count < max - removed && text[count] === '\n') count++;
+      if (count === 0) return;
+      if (count === text.length) {
+        next.remove();
+      } else {
+        next.textContent = text.slice(count);
+      }
+      removed += count;
+    } else {
+      return;
+    }
+  }
+}
 
 interface FileMatch {
   index: number;
@@ -66,23 +109,33 @@ export function useFileTags({
       .replace(/'/g, '&#39;');
   }, []);
 
-  // Event delegation for closing tags to avoid accumulating per-tag listeners.
+  // Event delegation for closing tags (file tags and quote chips) to avoid
+  // accumulating per-tag listeners.
   useEffect(() => {
     const el = editableRef.current;
     if (!el) return;
 
     const onClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
-      const closeEl = target?.closest?.('.file-tag-close') as HTMLElement | null;
+      const closeEl = target?.closest?.(
+        `.file-tag-close, ${QUOTE_TAG_CLOSE_SELECTOR}`
+      ) as HTMLElement | null;
       if (!closeEl) return;
 
       e.preventDefault();
       e.stopPropagation();
 
-      const tag = closeEl.closest('.file-tag') as HTMLElement | null;
-      if (tag) {
-        tag.remove();
+      const tag = closeEl.closest(`.file-tag, ${QUOTE_TAG_SELECTOR}`) as HTMLElement | null;
+      if (!tag) return;
+
+      if (isQuoteTag(tag)) {
+        removeLineBreaksAfter(tag, 2);
       }
+      tag.remove();
+
+      // Removing a node does not fire an input event. Dispatch one so the
+      // input state (hasContent, height, parent value) is updated.
+      el.dispatchEvent(new Event('input', { bubbles: true }));
     };
 
     el.addEventListener('click', onClick);
@@ -102,7 +155,16 @@ export function useFileTags({
     const timer = perfTimer('renderFileTags');
     if (!editableRef.current) return;
 
-    const currentText = getTextContent();
+    // Quote chips are not text references. Keep them out of the rebuild: they
+    // become placeholders in the text, and the same chip elements go back in
+    // their place after the rebuild.
+    const quoteChipHtml = Array.from(
+      editableRef.current.querySelectorAll(QUOTE_TAG_SELECTOR),
+      (chip) => chip.outerHTML
+    );
+    const currentText = quoteChipHtml.length > 0
+      ? extractEditableText(editableRef.current, { quotePlaceholder: QUOTE_PLACEHOLDER })
+      : getTextContent();
     timer.mark('getText');
 
     // Performance optimization: Skip for very large text
@@ -146,7 +208,7 @@ export function useFileTags({
           if (currentText.startsWith(key, i + 1)) {
             // Match must be followed by whitespace or end of string
             const afterChar = currentText[i + 1 + key.length];
-            if (afterChar === undefined || afterChar === ' ' || afterChar === '\n' || afterChar === '\t' || afterChar === '\r') {
+            if (afterChar === undefined || afterChar === ' ' || afterChar === '\n' || afterChar === '\t' || afterChar === '\r' || afterChar === QUOTE_PLACEHOLDER) {
               if (!longestMatch || key.length > longestMatch.length) {
                 longestMatch = { path: key, length: key.length };
               }
@@ -178,7 +240,7 @@ export function useFileTags({
         let endPos = 0;
         while (endPos < afterAt.length) {
           const ch = afterAt[endPos];
-          if (ch === '\n' || ch === '\r' || ch === '@') break;
+          if (ch === '\n' || ch === '\r' || ch === '@' || ch === QUOTE_PLACEHOLDER) break;
           if (ch === ' ' || ch === '\t') {
             // Peek ahead: if next segment has a path separator or file
             // extension, the space is inside the path — include it.
@@ -238,8 +300,8 @@ export function useFileTags({
         }
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         const element = node as HTMLElement;
-        // Skip already rendered file tags
-        if (!element.classList.contains('file-tag')) {
+        // Skip already rendered file tags and quote chips
+        if (!element.classList.contains('file-tag') && !isQuoteTag(element)) {
           node.childNodes.forEach(walk);
         }
       }
@@ -374,8 +436,15 @@ export function useFileTags({
       htmlParts.push(escapeHtmlText(currentText.substring(lastIndex)));
     }
 
-    // Join all parts into final HTML
-    const newHTML = htmlParts.join('');
+    // Join all parts into final HTML, then put the quote chips back
+    let quoteChipIndex = 0;
+    let newHTML = htmlParts.join('');
+    if (quoteChipHtml.length > 0) {
+      newHTML = newHTML.replace(
+        new RegExp(QUOTE_PLACEHOLDER, 'g'),
+        () => quoteChipHtml[quoteChipIndex++] ?? ''
+      );
+    }
     timer.mark('build-html');
 
     // Save virtual cursor position before DOM replacement

@@ -5,8 +5,13 @@
  * "@filepath" in virtual text (getTextContent). These utilities handle the mapping
  * between DOM cursor positions and virtual text offsets.
  *
+ * Quote chips (<span class="quote-tag" data-quote="...">) are atomic in the
+ * same way: their length is the length of their markdown block quote text.
+ *
  * Extracted from useTriggerDetection.ts for reuse in useFileTags.ts and other hooks.
  */
+
+import { getAtomicTagTextLength } from './quoteTag.js';
 
 /**
  * Helper: check if text ends with a newline
@@ -81,9 +86,8 @@ export function getVirtualCursorPosition(element: HTMLElement): number {
               const childTag = childEl.tagName.toLowerCase();
               if (childTag === 'br') {
                 position += 1;
-              } else if (childEl.classList.contains('file-tag')) {
-                const filePath = childEl.getAttribute('data-file-path') || '';
-                position += filePath.length + 1;
+              } else if (getAtomicTagTextLength(childEl) !== null) {
+                position += getAtomicTagTextLength(childEl) ?? 0;
               } else {
                 position += childEl.textContent?.length || 0;
               }
@@ -99,9 +103,9 @@ export function getVirtualCursorPosition(element: HTMLElement): number {
         return false;
       }
 
-      if (el.classList.contains('file-tag')) {
-        const filePath = el.getAttribute('data-file-path') || '';
-        const tagLength = filePath.length + 1;
+      const atomicTagLength = getAtomicTagTextLength(el);
+      if (atomicTagLength !== null) {
+        const tagLength = atomicTagLength;
 
         if (el.contains(range.endContainer)) {
           position += tagLength;
@@ -122,9 +126,8 @@ export function getVirtualCursorPosition(element: HTMLElement): number {
               const childTag = childEl.tagName.toLowerCase();
               if (childTag === 'br') {
                 position += 1;
-              } else if (childEl.classList.contains('file-tag')) {
-                const filePath = childEl.getAttribute('data-file-path') || '';
-                position += filePath.length + 1;
+              } else if (getAtomicTagTextLength(childEl) !== null) {
+                position += getAtomicTagTextLength(childEl) ?? 0;
               } else {
                 position += childEl.textContent?.length || 0;
               }
@@ -213,9 +216,9 @@ export function setVirtualCursorPosition(
         return false;
       }
 
-      if (el.classList.contains('file-tag')) {
-        const filePath = el.getAttribute('data-file-path') || '';
-        const tagLength = filePath.length + 1;
+      const atomicTagLength = getAtomicTagTextLength(el);
+      if (atomicTagLength !== null) {
+        const tagLength = atomicTagLength;
 
         if (position + tagLength >= virtualOffset) {
           // Target is inside file tag; place cursor after the tag
