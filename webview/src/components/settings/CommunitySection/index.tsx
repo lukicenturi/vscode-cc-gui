@@ -59,6 +59,10 @@ const CommunitySection = ({ addToast }: CommunitySectionProps) => {
   // through the openExternal bridge instead.
   const openExternal = useCallback((event: MouseEvent<HTMLAnchorElement>, url: string) => {
     event.preventDefault();
+    // VS Code's webview pre-script also opens http(s) anchors on a window
+    // click listener that ignores defaultPrevented. Stop the event so that
+    // the link opens only once.
+    event.stopPropagation();
     openBrowser(url);
   }, []);
 

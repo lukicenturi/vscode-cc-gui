@@ -38,6 +38,7 @@ import {
   useOpenSourceBannerState,
   useResetAttachmentsOnSessionChange,
   useSpaceKeyListener,
+  useRestoreFocusOnWindowFocus,
   useResizableChatInputBox,
 } from './hooks/index.js';
 import { debounce } from './utils/debounce.js';
@@ -572,6 +573,10 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
     });
 
     useSpaceKeyListener({ editableRef, onKeyDown: handleKeyDownForTagRendering });
+
+    // Put the focus back on the input after an app switch (Cmd+Tab) and back.
+    // This component only mounts in the chat view, so `!disabled` is enough.
+    useRestoreFocusOnWindowFocus(editableRef, !disabled);
 
     const {
       isResizing: isResizingInputBox,

@@ -1246,6 +1246,9 @@ const MarkdownBlock = ({ content = '', isStreaming = false }: MarkdownBlockProps
     }
 
     let anchor = target?.closest('a');
+    // True when the <a> is in the native event path. VS Code's own click
+    // listener on the webview window can only see the anchor in this case.
+    const anchorInEventPath = !!anchor;
 
     // Fallback: if the click target is not inside an <a> (e.g. a portal
     // tooltip with broken pointer-events overlaying the link), use the
@@ -1286,6 +1289,12 @@ const MarkdownBlock = ({ content = '', isStreaming = false }: MarkdownBlockProps
     }
 
     if (linkType === 'url' || /^(https?:|mailto:)/.test(href)) {
+      if (anchorInEventPath) {
+        // VS Code's webview pre-script listens for clicks on the window and
+        // opens http(s)/mailto anchors itself. It ignores defaultPrevented, so
+        // stop the event here; otherwise the link opens twice.
+        event.stopPropagation();
+      }
       openBrowser(href);
     } else {
       openFile(href);

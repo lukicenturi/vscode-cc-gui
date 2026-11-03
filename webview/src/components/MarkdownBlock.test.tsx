@@ -403,6 +403,31 @@ describe('MarkdownBlock linkify integration', () => {
     expect(bridgeMocks.openBrowser).toHaveBeenCalledWith('https://example.com/docs');
   });
 
+  it('stops URL link clicks before the VS Code window listener so the link opens once', () => {
+    render(
+      <MarkdownBlock
+        content={'[web](https://example.com/docs) and [local](file:///tmp/demo.txt)'}
+      />,
+    );
+
+    // Simulates the click listener that VS Code's webview pre-script adds to
+    // the window. That listener opens http(s) anchors itself.
+    const windowClickListener = vi.fn();
+    window.addEventListener('click', windowClickListener);
+    try {
+      fireEvent.click(screen.getByRole('link', { name: 'web' }));
+      expect(bridgeMocks.openBrowser).toHaveBeenCalledTimes(1);
+      expect(bridgeMocks.openBrowser).toHaveBeenCalledWith('https://example.com/docs');
+      expect(windowClickListener).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('link', { name: 'local' }));
+      expect(bridgeMocks.openFile).toHaveBeenCalledWith('file:///tmp/demo.txt');
+      expect(windowClickListener).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener('click', windowClickListener);
+    }
+  });
+
   it('strips system-internal XML tags (context, commit_analysis, etc.)', () => {
     render(
       <MarkdownBlock

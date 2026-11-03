@@ -167,6 +167,10 @@ const InstallDialog = ({ tool, onClose, onCopy }: InstallDialogProps) => {
             onClick={(e) => {
               // VS Code webviews don't route target=_blank — go through the openExternal bridge.
               e.preventDefault();
+              // VS Code's webview pre-script also opens http(s) anchors on a
+              // window click listener that ignores defaultPrevented. Stop the
+              // event so that the link opens only once.
+              e.stopPropagation();
               openBrowser(tool.docsUrl);
             }}
           >

@@ -38,5 +38,6 @@ export { useChatInputSelectionController } from './useChatInputSelectionControll
 export { useOpenSourceBannerState } from './useOpenSourceBannerState.js';
 export { useResetAttachmentsOnSessionChange } from './useResetAttachmentsOnSessionChange.js';
 export { useSpaceKeyListener } from './useSpaceKeyListener.js';
+export { useRestoreFocusOnWindowFocus } from './useRestoreFocusOnWindowFocus.js';
 export { useResizableChatInputBox, computeResize } from './useResizableChatInputBox.js';
 export { useInlineHistoryCompletion } from './useInlineHistoryCompletion.js';
