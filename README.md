@@ -14,19 +14,27 @@
 
 Run **CC GUI: Start Remote Control (Phone)** from the Command Palette, or click the phone icon in the CC GUI view title bar. Select a folder, then enter a session name. The extension starts `claude remote-control --name <name>` in a new VS Code terminal in that folder. Open the Claude app on your phone, go to **Code**, and select the session to chat with that folder. On macOS, the command runs inside `caffeinate -i` so that the Mac does not sleep (setting `ccGui.remoteControl.keepAwake`). The session is stored by the Claude Code CLI, so it also shows in the CC GUI History view of that workspace.
 
-### Drag files from the Explorer into the chat
+### Drag files from the Explorer into a browser or into the chat
 
-Drag a file from the VS Code Explorer into the chat input. The extension inserts an `@path` reference, so the model can read the file. VS Code blocks pointer events on every webview while a drag runs inside the window, so the drop only reaches the chat when you **hold Shift**. This is a VS Code rule, not an extension rule.
+Two VS Code rules limit drag-and-drop from the Explorer, and no extension can change them:
 
-To drop without Shift, patch the installed VS Code with:
+- A drag from the Explorer puts only text and URIs on the drag data, not a real file. A browser page that you drop on cannot read the file.
+- VS Code blocks pointer events on every webview while a drag runs inside the window. A drop reaches the chat input only when you **hold Shift**.
+
+`scripts/patch-vscode.sh` patches the installed VS Code for both:
 
 ```bash
-scripts/patch-vscode-webview-drop.sh apply     # back up, patch, and fix the checksum
-scripts/patch-vscode-webview-drop.sh restore   # put the original file back
-scripts/patch-vscode-webview-drop.sh status    # show if the patch is applied
+scripts/patch-vscode.sh apply     # back up, patch, and fix the checksums
+scripts/patch-vscode.sh restore   # put the original files back
+scripts/patch-vscode.sh status    # show the state of each patch
 ```
 
-The script inverts the rule: the webview gets the drop by default, and Shift gives the old VS Code behaviour. Restart VS Code after the patch. Run `apply` again after each VS Code update, because an update replaces the file. Set `VSCODE_APP` to patch a different install.
+After the patch:
+
+- **Native file drag:** hold **Option (Alt)** when you start a drag in the Explorer. The file goes on the OS drag pasteboard as a real file, so you can drop it into a browser as an upload, into Finder, or into any app. Only the first selected file is dragged. Without Option, the Explorer drag works as before.
+- **Webview drop:** a drop from the Explorer reaches the chat input without Shift. Shift gives the old VS Code behaviour.
+
+Restart VS Code after the patch. Run `apply` again after each VS Code update, because an update replaces the files. Set `VSCODE_APP` to patch a different install, and `CCGUI_PATCHES` to apply only one patch (`native-drag` or `webview-drop`).
 
 ---
 
