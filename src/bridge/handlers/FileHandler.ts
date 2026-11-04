@@ -94,7 +94,21 @@ export class FileHandler implements BridgeHandler {
       }
 
       filePath = resolveFileOpenPath(target.path, this.getFileOpenRoots(), (candidate) => fs.existsSync(candidate));
-      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+      if (!fs.existsSync(filePath)) {
+        throw new Error('file not found');
+      }
+      const uri = vscode.Uri.file(filePath);
+      let doc: vscode.TextDocument;
+      try {
+        doc = await vscode.workspace.openTextDocument(uri);
+      } catch (textError) {
+        // Not a text file (an image, a PDF, a very large file): let VS Code
+        // pick its own editor for it, for example the image preview.
+        const reason = textError instanceof Error ? textError.message : String(textError);
+        this.context.log.appendLine(`[FILE] open_file: not a text document (${reason}); use vscode.open for "${filePath}"`);
+        await vscode.commands.executeCommand('vscode.open', uri);
+        return;
+      }
       const editor = await vscode.window.showTextDocument(doc, { preview: false });
       if (line) {
         const pos = new vscode.Position(Math.max(0, Number(line) - 1), 0);
@@ -106,7 +120,7 @@ export class FileHandler implements BridgeHandler {
       this.context.log.appendLine(
         `[FILE] open_file failed raw="${String(pathWithLine)}" resolved="${filePath}": ${reason}`,
       );
-      this.addToast(webview, `Unable to open file: ${filePath || String(pathWithLine)}`, 'error');
+      this.addToast(webview, `Unable to open file: ${filePath || String(pathWithLine)} (${reason})`, 'error');
     }
   }
 
