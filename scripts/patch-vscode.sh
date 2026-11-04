@@ -48,6 +48,24 @@ BUNDLE_KEYS=(
 
 die() { echo "error: $*" >&2; exit 1; }
 
+# Stop with a clear message when the file cannot be written.
+# macOS lets only processes with the "App Management" permission change an app
+# bundle in /Applications. The VS Code integrated terminal does not have it, so
+# the write fails although the user owns the file.
+require_writable() {
+  [ -w "$1" ] && return 0
+  local owner
+  owner="$(stat -f '%Su' "$1" 2>/dev/null || echo '?')"
+  if [ "$owner" = "$(id -un)" ]; then
+    die "cannot write $1 although you own it.
+  macOS blocks changes to app bundles in /Applications for terminals without the
+  App Management permission. Do one of these:
+  - Run this script from Terminal.app (or iTerm), not from the VS Code terminal, and allow the prompt.
+  - Or open System Settings > Privacy & Security > App Management and turn it on for your terminal app."
+  fi
+  die "not writable: $1 (owner: $owner). Run: sudo chown -R \"\$(whoami)\" \"$APP\""
+}
+
 checksum() {
   openssl dgst -sha256 -binary "$1" | base64 | tr -d '='
 }
@@ -161,7 +179,7 @@ cmd_status() {
 cmd_apply() {
   local key file state changed=0
   [ -f "$PRODUCT" ] || die "not found: $PRODUCT"
-  [ -w "$PRODUCT" ] || die "not writable: $PRODUCT (run: sudo chown -R \"\$(whoami)\" \"$APP\")"
+  require_writable "$PRODUCT"
   if pgrep -f "$APP/Contents/MacOS/Electron" >/dev/null 2>&1; then
     echo "warning: VS Code runs now. Restart it after the patch." >&2
   fi
@@ -169,7 +187,7 @@ cmd_apply() {
   for key in "${BUNDLE_KEYS[@]}"; do
     file="$RES/out/$key"
     [ -f "$file" ] || continue
-    [ -w "$file" ] || die "not writable: $file"
+    require_writable "$file"
     for p in $PATCHES; do
       state="$(patch_state "$p" "$file")"
       case "$state" in
