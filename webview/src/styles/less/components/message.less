@@ -791,7 +791,7 @@
 
 /* User message code blocks - ensure they fit within bubble */
 .message.user .markdown-content pre {
-    background-color: var(--color-message-user-code-bg);
+    background-color: var(--color-message-user-code-block-bg);
     border: 1px solid var(--color-message-user-code-border);
     max-width: 100%;
     overflow-x: auto;
@@ -800,6 +800,11 @@
 .message.user .markdown-content code {
     background-color: var(--color-message-user-code-bg);
     word-break: break-all;
+}
+
+/* In a code block the box has the tint; the text gets no chip of its own */
+.message.user .markdown-content pre code {
+    background-color: transparent;
 }
 
 /* The user bubble is blue in both themes, so inline code there uses its own
