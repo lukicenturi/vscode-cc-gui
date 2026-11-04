@@ -312,4 +312,82 @@ describe('ensureCaretOutsideHiddenTick', () => {
     expect(window.getSelection()!.anchorOffset).toBe(3);
     expect(getVirtualCursorPosition(editable)).toBe(4);
   });
+
+  it('moves the caret after the closing tick to after the span', () => {
+    // The End key puts the caret here; typed text goes nowhere.
+    const editable = makeEditable('see `foo`');
+    decorateInputMarkup(editable);
+    const span = inlineSpans(editable)[0];
+    setCaret(span.lastChild!.firstChild!, 1);
+
+    expect(ensureCaretOutsideHiddenTick(editable)).toBe(true);
+    expect(window.getSelection()!.anchorNode).toBe(span.parentNode);
+    expect(window.getSelection()!.anchorOffset).toBe(2);
+    expect(caretIsInTick()).toBe(false);
+    expect(getVirtualCursorPosition(editable)).toBe(9);
+  });
+
+  // Chromium anchors the caret on the span itself after an arrow key crosses
+  // a hidden tick. The offset counts the child nodes: tick, code, tick.
+  it('moves a caret anchored on the span after the closing tick to after the span', () => {
+    // ArrowRight at the end of the code text puts the caret here. A second
+    // ArrowRight does not move it, and typed text goes into the span.
+    const editable = makeEditable('see `foo` here');
+    decorateInputMarkup(editable);
+    const span = inlineSpans(editable)[0];
+    setCaret(span, 3);
+
+    expect(ensureCaretOutsideHiddenTick(editable)).toBe(true);
+    expect(window.getSelection()!.anchorNode).toBe(span.parentNode);
+    expect(window.getSelection()!.anchorOffset).toBe(2);
+    expect(getVirtualCursorPosition(editable)).toBe(9);
+  });
+
+  it('moves a caret anchored on the span before the closing tick to the end of the code text', () => {
+    const editable = makeEditable('see `foo` here');
+    decorateInputMarkup(editable);
+    const span = inlineSpans(editable)[0];
+    setCaret(span, 2);
+
+    expect(ensureCaretOutsideHiddenTick(editable)).toBe(true);
+    expect(window.getSelection()!.anchorNode).toBe(span.childNodes[1]);
+    expect(window.getSelection()!.anchorOffset).toBe(3);
+    expect(getVirtualCursorPosition(editable)).toBe(8);
+  });
+
+  it('moves a caret anchored on the span after the opening tick to the start of the code text', () => {
+    const editable = makeEditable('see `foo` here');
+    decorateInputMarkup(editable);
+    const span = inlineSpans(editable)[0];
+    setCaret(span, 1);
+
+    expect(ensureCaretOutsideHiddenTick(editable)).toBe(true);
+    expect(window.getSelection()!.anchorNode).toBe(span.childNodes[1]);
+    expect(window.getSelection()!.anchorOffset).toBe(0);
+    expect(getVirtualCursorPosition(editable)).toBe(5);
+  });
+
+  it('moves a caret anchored on the span before the opening tick to before the span', () => {
+    const editable = makeEditable('see `foo` here');
+    decorateInputMarkup(editable);
+    const span = inlineSpans(editable)[0];
+    setCaret(span, 0);
+
+    expect(ensureCaretOutsideHiddenTick(editable)).toBe(true);
+    expect(window.getSelection()!.anchorNode).toBe(span.parentNode);
+    expect(window.getSelection()!.anchorOffset).toBe(1);
+    expect(getVirtualCursorPosition(editable)).toBe(4);
+  });
+
+  it('does nothing for a caret anchored on a span that is not inline code', () => {
+    const editable = makeEditable('see `foo`');
+    decorateInputMarkup(editable);
+    const other = document.createElement('span');
+    other.textContent = 'x';
+    editable.firstChild!.appendChild(other);
+    setCaret(other, 1);
+
+    expect(ensureCaretOutsideHiddenTick(editable)).toBe(false);
+    expect(window.getSelection()!.anchorNode).toBe(other);
+  });
 });

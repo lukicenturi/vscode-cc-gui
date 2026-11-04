@@ -549,8 +549,70 @@ function childIndex(node: Node): number {
   return node.parentNode ? Array.prototype.indexOf.call(node.parentNode.childNodes, node) : -1;
 }
 
+/** A visible caret position at the edge of an inline code span. */
+type InlineCodeSlot = 'before' | 'code-start' | 'code-end' | 'after';
+
+/** The code text node of an inline code span (null for a span with no code text). */
+function getInlineCodeText(span: HTMLElement): Text | null {
+  for (const child of Array.from(span.childNodes)) {
+    if (child.nodeType === Node.TEXT_NODE) return child as Text;
+  }
+  return null;
+}
+
 /**
- * When the collapsed caret is in a hidden backtick of an inline code span,
+ * The inline code span and the visible slot for a collapsed caret that is at
+ * a hidden position of the span, or null when the caret is at a visible
+ * position. Hidden positions:
+ *
+ * - In a hidden backtick (for example after the End key).
+ * - Anchored on the span itself, between its child nodes (for example after
+ *   ArrowRight from the end of the code text: Chromium stops after the
+ *   hidden closing backtick, and a second ArrowRight does not move).
+ */
+function findHiddenInlineCodePosition(
+  editable: HTMLElement,
+  selection: Selection
+): { span: HTMLElement; slot: InlineCodeSlot } | null {
+  const anchor = selection.anchorNode;
+  if (!anchor) return null;
+  const offset = selection.anchorOffset;
+
+  const anchorElement = toElement(anchor);
+  const tick = anchorElement?.closest(`.${INLINE_CODE_TICK_CLASS}`);
+  if (tick) {
+    if (!editable.contains(tick)) return null;
+    const span = tick.parentElement;
+    if (!span || !span.classList.contains(INLINE_CODE_CLASS) || !span.parentNode) return null;
+    // The caret is before (false) or after (true) the backtick character
+    const afterTick = anchor === tick ? offset > 0 : offset >= (anchor.textContent?.length ?? 0);
+    const isOpening = tick === span.firstChild;
+    if (isOpening) return { span, slot: afterTick ? 'code-start' : 'before' };
+    return { span, slot: afterTick ? 'after' : 'code-end' };
+  }
+
+  if (
+    anchor.nodeType === Node.ELEMENT_NODE &&
+    (anchor as HTMLElement).classList.contains(INLINE_CODE_CLASS) &&
+    editable.contains(anchor) &&
+    anchor.parentNode
+  ) {
+    const span = anchor as HTMLElement;
+    const code = getInlineCodeText(span);
+    if (!code) return { span, slot: offset <= 1 ? 'before' : 'after' };
+    const codeIndex = childIndex(code);
+    if (offset < codeIndex) return { span, slot: 'before' };
+    if (offset === codeIndex) return { span, slot: 'code-start' };
+    if (offset === codeIndex + 1) return { span, slot: 'code-end' };
+    return { span, slot: 'after' };
+  }
+
+  return null;
+}
+
+/**
+ * When the collapsed caret is at a hidden position of an inline code span
+ * (in a hidden backtick, or anchored on the span between its child nodes),
  * move it to the visible position at the same text offset:
  *
  * - Before the opening backtick: before the span.
@@ -558,39 +620,39 @@ function childIndex(node: Node): number {
  * - Before the closing backtick: the end of the code text.
  * - After the closing backtick: after the span.
  *
+ * Chromium does not move the caret out of these positions with the arrow
+ * keys, and typed text goes into the span or nowhere. Call it on every
+ * selection change.
+ *
  * @returns true when the caret moved
  */
 export function ensureCaretOutsideHiddenTick(editable: HTMLElement): boolean {
   const selection = getSelectionInside(editable);
   if (!selection || !selection.isCollapsed || !selection.anchorNode) return false;
 
-  const anchorElement = toElement(selection.anchorNode);
-  const tick = anchorElement?.closest(`.${INLINE_CODE_TICK_CLASS}`);
-  if (!tick || !editable.contains(tick)) return false;
-  const span = tick.parentElement;
-  if (!span || !span.classList.contains(INLINE_CODE_CLASS) || !span.parentNode) return false;
-
-  // The caret is before (false) or after (true) the backtick character
-  const afterTick =
-    selection.anchorNode === tick
-      ? selection.anchorOffset > 0
-      : selection.anchorOffset >= (selection.anchorNode.textContent?.length ?? 0);
-  const isOpening = tick === span.firstChild;
-  const parent = span.parentNode;
+  const found = findHiddenInlineCodePosition(editable, selection);
+  if (!found) return false;
+  const { span, slot } = found;
+  const parent = span.parentNode as Node;
   const spanIndex = childIndex(span);
+  const code = getInlineCodeText(span);
 
-  if (isOpening && !afterTick) {
-    setCaret(parent, spanIndex);
-  } else if (!isOpening && afterTick) {
-    setCaret(parent, spanIndex + 1);
-  } else {
-    const code = isOpening ? tick.nextSibling : tick.previousSibling;
-    if (code && code.nodeType === Node.TEXT_NODE) {
-      setCaret(code, isOpening ? 0 : (code.textContent?.length ?? 0));
-    } else {
+  switch (slot) {
+    case 'before':
+      setCaret(parent, spanIndex);
+      break;
+    case 'after':
+      setCaret(parent, spanIndex + 1);
+      break;
+    case 'code-start':
       // Not a normal span (no code text): put the caret outside of it
-      setCaret(parent, isOpening ? spanIndex : spanIndex + 1);
-    }
+      if (code) setCaret(code, 0);
+      else setCaret(parent, spanIndex);
+      break;
+    case 'code-end':
+      if (code) setCaret(code, code.textContent?.length ?? 0);
+      else setCaret(parent, spanIndex + 1);
+      break;
   }
   return true;
 }

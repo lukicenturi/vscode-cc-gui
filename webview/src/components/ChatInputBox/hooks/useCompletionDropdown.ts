@@ -59,6 +59,22 @@ export function useCompletionDropdown<T>({
   const abortControllerRef = useRef<AbortController | null>(null);
   // Save latest state for keyboard event handling (avoid closure issues)
   const stateRef = useRef<CompletionDropdownState>(state);
+  // The trigger that the user dismissed with Tab, Shift+Enter or Escape. The
+  // dropdown does not open again for this trigger (same symbol, same start
+  // offset) while the user types on. close() clears it: the trigger detection
+  // calls close() when the trigger is gone from the text.
+  const dismissedTriggerRef = useRef<Pick<TriggerQuery, 'trigger' | 'start'> | null>(null);
+  // True when the user moved the active item with the arrow keys since open()
+  const navigatedRef = useRef(false);
+
+  const isDismissed = useCallback((triggerQuery: TriggerQuery): boolean => {
+    const dismissed = dismissedTriggerRef.current;
+    return (
+      dismissed !== null &&
+      dismissed.trigger === triggerQuery.trigger &&
+      dismissed.start === triggerQuery.start
+    );
+  }, []);
 
   // Sync update stateRef
   useEffect(() => {
@@ -69,7 +85,12 @@ export function useCompletionDropdown<T>({
    * Open dropdown
    */
   const open = useCallback((position: DropdownPosition, triggerQuery: TriggerQuery) => {
+    if (isDismissed(triggerQuery)) {
+      debugLog('[useCompletionDropdown] open skipped (dismissed):', triggerQuery);
+      return;
+    }
     debugLog('[useCompletionDropdown] open:', { position, triggerQuery });
+    navigatedRef.current = false;
     // Clear items when opening to ensure fresh data for new trigger session
     setState(prev => ({
       ...prev,
@@ -82,12 +103,13 @@ export function useCompletionDropdown<T>({
       rawItems: [],
       loading: true, // Set loading immediately on open
     }));
-  }, []);
+  }, [isDismissed]);
 
   /**
    * Close dropdown
    */
   const close = useCallback(() => {
+    dismissedTriggerRef.current = null;
     // Cancel pending requests
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
@@ -107,6 +129,18 @@ export function useCompletionDropdown<T>({
       loading: false,
     }));
   }, []);
+
+  /**
+   * Close the dropdown because the user does not want an item (Tab,
+   * Shift+Enter or Escape). The dropdown stays closed for this trigger.
+   */
+  const dismiss = useCallback(() => {
+    const { triggerQuery } = stateRef.current;
+    close();
+    if (triggerQuery) {
+      dismissedTriggerRef.current = { trigger: triggerQuery.trigger, start: triggerQuery.start };
+    }
+  }, [close]);
 
   /**
    * Search
@@ -177,10 +211,11 @@ export function useCompletionDropdown<T>({
    * Update query
    */
   const updateQuery = useCallback((triggerQuery: TriggerQuery) => {
+    if (isDismissed(triggerQuery)) return;
     debugLog('[useCompletionDropdown] updateQuery:', triggerQuery);
     setState(prev => ({ ...prev, triggerQuery }));
     debouncedSearch(triggerQuery.query);
-  }, [debouncedSearch]);
+  }, [debouncedSearch, isDismissed]);
 
   /**
    * Select active item
@@ -209,6 +244,15 @@ export function useCompletionDropdown<T>({
   /**
    * Handle keyboard event
    * Returns true if event was handled
+   *
+   * - ArrowUp / ArrowDown move the active item.
+   * - Enter selects the active item.
+   * - Tab selects the active item only after the arrow keys moved it. Else
+   *   it dismisses the dropdown: the user types a word with the trigger
+   *   symbol in it (for example an email address) and does not want an item.
+   * - Shift+Enter dismisses the dropdown and is not handled, so the input
+   *   gets its new line.
+   * - Escape dismisses the dropdown.
    */
   const handleKeyDown = useCallback((e: KeyboardEvent): boolean => {
     // Use ref to get latest state, avoid closure issues
@@ -227,6 +271,7 @@ export function useCompletionDropdown<T>({
         e.preventDefault();
         // Prevent division by zero: when no selectable items, keep activeIndex at 0
         if (selectableCount === 0) return true;
+        navigatedRef.current = true;
         setState(prev => ({
           ...prev,
           activeIndex: (prev.activeIndex + 1) % selectableCount,
@@ -238,6 +283,7 @@ export function useCompletionDropdown<T>({
         e.preventDefault();
         // Prevent division by zero: when no selectable items, keep activeIndex at 0
         if (selectableCount === 0) return true;
+        navigatedRef.current = true;
         setState(prev => ({
           ...prev,
           activeIndex: (prev.activeIndex - 1 + selectableCount) % selectableCount,
@@ -246,20 +292,29 @@ export function useCompletionDropdown<T>({
         return true;
 
       case 'Enter':
-      case 'Tab':
+        if (e.shiftKey) {
+          dismiss();
+          return false;
+        }
         e.preventDefault();
         selectActive();
         return true;
 
+      case 'Tab':
+        e.preventDefault();
+        if (navigatedRef.current) selectActive();
+        else dismiss();
+        return true;
+
       case 'Escape':
         e.preventDefault();
-        close();
+        dismiss();
         return true;
 
       default:
         return false;
     }
-  }, [selectActive, close]); // Only depend on functions that don't change frequently
+  }, [selectActive, dismiss]); // Only depend on functions that don't change frequently
 
   /**
    * Handle mouse enter
@@ -313,6 +368,7 @@ export function useCompletionDropdown<T>({
     // Methods
     open,
     close,
+    dismiss,
     updateQuery,
     handleKeyDown,
     handleMouseEnter,

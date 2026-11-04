@@ -281,7 +281,7 @@ useGlobalCallbacks({
 **Features:**
 - **Debounced search** - Reduces API calls
 - **Race condition protection** - Uses AbortController
-- **Keyboard navigation** - Arrow keys, Enter, Escape
+- **Keyboard navigation** - Arrow keys move the active item; Enter selects it; Tab selects it only after the arrow keys moved it, else Tab dismisses the dropdown; Shift+Enter and Escape dismiss it. A dismissed trigger does not open the dropdown again while the user types on (for example an email address).
 - **Mouse navigation** - Hover selection
 
 ```typescript

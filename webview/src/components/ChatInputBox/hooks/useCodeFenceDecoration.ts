@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { DEBOUNCE_TIMING } from '../../../constants/performance.js';
 import { debounce } from '../utils/debounce.js';
-import { decorateInputMarkup } from '../utils/codeFenceDecoration.js';
+import {
+  decorateInputMarkup,
+  ensureCaretOutsideHiddenTick,
+} from '../utils/codeFenceDecoration.js';
 
 interface UseCodeFenceDecorationOptions {
   editableRef: React.RefObject<HTMLDivElement | null>;
@@ -32,6 +35,12 @@ interface UseCodeFenceDecorationReturn {
  * See utils/codeFenceDecoration.ts.
  * It does not run during IME composition, because a DOM change stops the
  * composition. The input event after compositionend schedules it again.
+ *
+ * On every selection change, a caret at a hidden position of an inline code
+ * span moves to the visible position at the same text offset. Chromium puts
+ * the caret there after ArrowRight at the end of the code text and after the
+ * End key, and then the arrow keys do not move it out and typed text goes
+ * into the span (see ensureCaretOutsideHiddenTick).
  */
 export function useCodeFenceDecoration({
   editableRef,
@@ -54,6 +63,16 @@ export function useCodeFenceDecoration({
   );
 
   useEffect(() => () => debouncedDecorate.cancel(), [debouncedDecorate]);
+
+  useEffect(() => {
+    const onSelectionChange = () => {
+      const el = editableRef.current;
+      if (!el || isComposingRef.current) return;
+      ensureCaretOutsideHiddenTick(el);
+    };
+    document.addEventListener('selectionchange', onSelectionChange);
+    return () => document.removeEventListener('selectionchange', onSelectionChange);
+  }, [editableRef, isComposingRef]);
 
   const scheduleDecoration = useCallback(() => {
     debouncedDecorate();
