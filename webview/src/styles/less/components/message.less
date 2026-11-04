@@ -810,9 +810,12 @@
     color: var(--color-message-user-code-fg);
 }
 
-/* Code block text in the bubble stays readable on blue in the light theme */
-.message.user .markdown-content pre code {
-    color: var(--color-message-user-text);
+/* A code block in the bubble uses the same orange as the inline code there.
+   The highlight.js token colours of the theme do not read well on the blue
+   bubble, so the spans get the same colour too. */
+.message.user .markdown-content pre code,
+.message.user .markdown-content pre code span {
+    color: var(--color-message-user-code-fg);
 }
 
 .markdown-content pre code {
