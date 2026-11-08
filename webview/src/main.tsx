@@ -1,3 +1,4 @@
+import { getRenderedAppScale, nudgeAppScale } from './utils/appScale';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -115,17 +116,16 @@ if (enableVConsole) {
  * Apply IDEA editor font configuration to CSS variables
  */
 /**
- * JCEF (macOS) may occasionally render with an incorrect zoom/layout after the IDE
- * stays in background / screen-off for a while. The UI uses CSS `zoom` with an
- * inverse `vw/vh` container size to implement font scaling. If the zoom is not
+ * JCEF (macOS) may occasionally render with an incorrect scale/layout after the IDE
+ * stays in background / screen-off for a while. The UI uses a CSS transform with an
+ * inverse `vw/vh` container size to implement font scaling. If the scale is not
  * applied correctly after resume, the container becomes smaller than the viewport,
  * leaving blank areas and causing "misalignment".
  *
- * This recovery nudges Chromium/JCEF to re-apply the expected zoom and triggers
+ * This recovery nudges Chromium/JCEF to re-apply the expected scale and triggers
  * a resize recalculation for components relying on window size.
  */
 function setupScaleRecovery() {
-  type CSSStyleDeclarationWithZoom = CSSStyleDeclaration & { zoom: string };
 
   const getExpectedScale = (): string => {
     const fromCss = getComputedStyle(document.documentElement).getPropertyValue('--font-scale').trim();
@@ -157,40 +157,32 @@ function setupScaleRecovery() {
     // Re-set the CSS variable to ensure width/height calc(100vw/scale) is refreshed.
     document.documentElement.style.setProperty('--font-scale', expected);
 
-    const computedZoom = app
-      ? (getComputedStyle(app) as unknown as CSSStyleDeclarationWithZoom).zoom
-      : null;
-    const computedZoomNumber = typeof computedZoom === 'string' ? parseFloat(computedZoom) : Number.NaN;
+    const computedScale = app ? getRenderedAppScale(app) : null;
     const expectedNumber = parseFloat(expected);
 
-    const needsZoomNudge =
+    const needsNudge =
       !!app &&
       Number.isFinite(expectedNumber) &&
-      (!Number.isFinite(computedZoomNumber) || Math.abs(computedZoomNumber - expectedNumber) > 0.01);
+      (computedScale === null || Math.abs(computedScale - expectedNumber) > 0.01);
 
-    if (app && needsZoomNudge) {
-      const appStyle = app.style as unknown as CSSStyleDeclarationWithZoom;
-      // Toggle inline zoom to ensure Chromium/JCEF re-applies scaling after resume.
-      // Keep the final value aligned with the CSS variable.
-      appStyle.zoom = '1';
-      // Force a sync layout.
-      void app.offsetHeight;
-      appStyle.zoom = expected;
+    if (app && needsNudge) {
+      // Remove the transform for one layout, then let the CSS rule apply the
+      // scale again, so Chromium/JCEF re-applies it after resume.
+      nudgeAppScale(app);
     }
 
     // Let components recompute layout (some rely on window resize).
     requestAnimationFrame(() => {
       window.dispatchEvent(new Event('resize'));
-      if (app && needsZoomNudge) {
-        const appStyle = app.style as unknown as CSSStyleDeclarationWithZoom;
+      if (app && needsNudge) {
         // One more tick to reduce flakiness on macOS/JCEF.
-        appStyle.zoom = expected;
+        app.style.transform = '';
       }
       debugLog('[ScaleRecovery] Applied scale recovery:', {
         reason,
         expected,
-        computedZoom,
-        needsZoomNudge,
+        computedScale,
+        needsNudge,
       });
       lastRecoveryAt = Date.now();
     });

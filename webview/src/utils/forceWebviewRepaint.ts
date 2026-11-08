@@ -1,3 +1,5 @@
+import { nudgeAppScale } from './appScale';
+
 /**
  * forceWebviewRepaint
  *
@@ -11,10 +13,11 @@
  * Typical culprits: position:fixed/animated overlays (the changelog dialog) and
  * input-box header content that grows/shrinks (open-source banner, attachments).
  *
- * The fix reuses the zoom-nudge technique already proven in main.tsx `forceReapply`
- * ("Toggle inline zoom to ensure Chromium/JCEF re-applies scaling"), but applies it
- * unconditionally. The double requestAnimationFrame waits for React to finish the
- * unmount / reflow first, so the nudge erases the post-unmount viewport.
+ * The fix reuses the scale-nudge technique of main.tsx `forceReapply`: remove
+ * the transform of #app for one synchronous layout, then let the CSS rule
+ * apply the font scale again. The double requestAnimationFrame waits for React
+ * to finish the unmount / reflow first, so the nudge erases the post-unmount
+ * viewport.
  *
  * @param _reason optional label for debugging; intentionally unused at runtime.
  */
@@ -22,20 +25,10 @@ export function forceWebviewRepaint(_reason?: string): void {
   const app = document.getElementById('app');
   if (!app) return;
 
-  const appStyle = app.style as CSSStyleDeclaration & { zoom?: string };
-  // Restore target: align with the scale main.tsx maintains via --font-scale.
-  const expectedScale = getComputedStyle(document.documentElement)
-    .getPropertyValue('--font-scale')
-    .trim();
-
   // Wait for React to finish unmount/reflow, THEN nudge, so we erase post-unmount pixels.
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      const restore = expectedScale || appStyle.zoom || '1';
-      // Toggle inline zoom to force Chromium/JCEF to re-rasterize the whole viewport.
-      appStyle.zoom = '1';
-      void app.offsetHeight; // force synchronous layout
-      appStyle.zoom = restore;
+      nudgeAppScale(app);
       // Let layout-dependent components recompute (mirrors main.tsx forceReapply).
       window.dispatchEvent(new Event('resize'));
     });

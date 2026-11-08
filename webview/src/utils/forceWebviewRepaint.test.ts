@@ -28,12 +28,12 @@ describe('forceWebviewRepaint', () => {
     }
   };
 
-  it('toggles inline zoom and dispatches resize after a double rAF', () => {
+  it('toggles the inline transform and dispatches resize after a double rAF', () => {
     const zoomWrites: string[] = [];
     const app = {
       style: {
-        set zoom(v: string) { zoomWrites.push(v); },
-        get zoom() { return zoomWrites[zoomWrites.length - 1] ?? ''; },
+        set transform(v: string) { zoomWrites.push(v); },
+        get transform() { return zoomWrites[zoomWrites.length - 1] ?? ''; },
       },
       offsetHeight: 0,
     } as unknown as HTMLElement;
@@ -49,9 +49,9 @@ describe('forceWebviewRepaint', () => {
 
     flushRaf();
 
-    // zoom is forced to '1' then restored to the --font-scale value, forcing
-    // Chromium/JCEF to re-rasterize the whole viewport.
-    expect(zoomWrites).toEqual(['1', '1.1']);
+    // The transform is removed, then the CSS rule applies the font scale
+    // again, which makes Chromium/JCEF re-rasterize the whole viewport.
+    expect(zoomWrites).toEqual(['none', '']);
     const resizeDispatched = dispatchSpy.mock.calls.some(
       ([evt]) => evt instanceof Event && evt.type === 'resize'
     );
