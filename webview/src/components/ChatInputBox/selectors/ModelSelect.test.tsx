@@ -116,6 +116,7 @@ describe('ModelSelect', () => {
 
   it('Claude 内置模型列表应按目标顺序展示最新模型，并移除旧可见项', () => {
     expect(CLAUDE_MODELS.map((model) => model.id)).toEqual([
+      'claude-fable-5-2',
       'claude-fable-5-1',
       'claude-fable-5',
       'claude-opus-5',

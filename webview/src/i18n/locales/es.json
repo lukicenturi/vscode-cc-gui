@@ -1493,9 +1493,13 @@
         "label": "Haiku 4.5",
         "description": "Haiku 4.5 · El más rápido para respuestas rápidas"
       },
+      "fable52": {
+        "label": "Fable 5.2",
+        "description": "Fable 5.2 · El más potente · clase Mythos"
+      },
       "fable51": {
         "label": "Fable 5.1",
-        "description": "Fable 5.1 · El más potente · clase Mythos"
+        "description": "Fable 5.1 · Generación anterior de Fable"
       },
       "fable5": {
         "label": "Fable 5",
